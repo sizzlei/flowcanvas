@@ -36,7 +36,7 @@
   /* color swatches */
   .swatch{width:20px;height:20px;border-radius:5px;border:2px solid #0006;cursor:pointer;padding:0}
   .swatch:hover{transform:scale(1.12)}
-  #colorPick,#strokePick,#bgPick{width:34px;height:30px;padding:2px;border:1px solid var(--line);border-radius:7px;
+  #colorPick,#strokePick,#bgPick,#groupColorPick{width:34px;height:30px;padding:2px;border:1px solid var(--line);border-radius:7px;
     background:var(--panel2);cursor:pointer}
   main{flex:1;display:flex;min-height:0}
   #canvasWrap{flex:1;position:relative;overflow:hidden;background:
@@ -74,9 +74,9 @@
   .node.droptarget .shape{stroke:var(--accent2)!important;stroke-width:3.5!important}
   /* subgraph container */
   .subgraph{cursor:grab}
-  .subgraph rect{fill:rgba(139,92,246,.06);stroke:var(--accent);stroke-width:1.4;
-    stroke-dasharray:6 4;rx:12}
-  .subgraph text{fill:var(--accent);font-size:13px;font-weight:600;cursor:grab}
+  /* fill/stroke color are set per-group as attributes (see renderGroups) so they can be customized */
+  .subgraph rect{stroke-width:1.4;stroke-dasharray:6 4}
+  .subgraph text{font-size:13px;font-weight:600;cursor:grab}
   .edge path.line{fill:none;stroke:#9c8fce;stroke-width:2}
   .edge.sel path.line{stroke:var(--accent2)!important;stroke-width:3!important}
   .edge text{fill:var(--muted);font-size:12px;text-anchor:middle}
@@ -124,3 +124,13 @@
     font-size:12.5px;background:#120f1c}
   .key-btn.capturing{border-color:var(--accent2);color:var(--accent2)}
   .modal-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:18px}
+  /* generic dialog (replaces native alert/prompt/confirm) */
+  #dialog{position:fixed;inset:0;background:rgba(6,8,12,.6);backdrop-filter:blur(2px);
+    display:none;align-items:center;justify-content:center;z-index:120}
+  .dialog-box{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    width:380px;max-width:92vw;padding:22px;box-shadow:0 24px 60px rgba(0,0,0,.55)}
+  .dialog-box p{margin:0 0 14px;font-size:14px;line-height:1.6}
+  .dialog-box input{width:100%;font-family:inherit;font-size:14px;color:var(--text);background:#120f1c;
+    border:1px solid var(--line);border-radius:8px;padding:9px 11px;outline:none;margin-bottom:4px}
+  .dialog-box input:focus{border-color:var(--accent2)}
+  .dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}

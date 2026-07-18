@@ -44,6 +44,17 @@
     const cx=view.x+view.w/2,cy=view.y+view.h/2;
     view.w=r.width||1000;view.h=r.height||700;view.x=cx-view.w/2;view.y=cy-view.h/2;applyView();
   }
+  function homeView(){                          // default view: 100% zoom, centered on content
+    const r=svg.getBoundingClientRect();
+    view.w=r.width||1000;view.h=r.height||700;
+    if(nodes.length){
+      let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
+      nodes.forEach(n=>{minX=Math.min(minX,n.x-n.w/2);maxX=Math.max(maxX,n.x+n.w/2);
+        minY=Math.min(minY,n.y-n.h/2);maxY=Math.max(maxY,n.y+n.h/2);});
+      view.x=(minX+maxX)/2-view.w/2;view.y=(minY+maxY)/2-view.h/2;
+    }else{view.x=0;view.y=0;}
+    applyView();
+  }
   function initView(){const r=svg.getBoundingClientRect();
     view.w=r.width||1000;view.h=r.height||700;view.x=0;view.y=0;applyView();}
   function fitView(){
@@ -77,6 +88,36 @@
 
   function toast(m){const t=document.getElementById("toast");t.textContent=m;
     t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),1700);}
+
+  // ---------- dialog (custom layer, replaces native alert/prompt/confirm) ----------
+  const dialogEl=document.getElementById("dialog");
+  const dialogMsg=document.getElementById("dialogMsg");
+  const dialogInput=document.getElementById("dialogInput");
+  const dialogOk=document.getElementById("dialogOk");
+  let dialogCb=null;
+  function openDialog(o){
+    dialogMsg.textContent=o.message||"";
+    const useInput=!!o.input;
+    dialogInput.style.display=useInput?"":"none";
+    if(useInput)dialogInput.value=o.value||"";
+    dialogOk.textContent=o.okText||"확인";
+    dialogCb=o.onOk||null;dialogEl._input=useInput;
+    dialogEl.style.display="flex";
+    if(useInput)setTimeout(()=>{dialogInput.focus();dialogInput.select();},0);
+  }
+  function closeDialog(ok){
+    const cb=dialogCb,useInput=dialogEl._input,val=dialogInput.value;
+    dialogCb=null;dialogEl.style.display="none";
+    if(ok&&cb)cb(useInput?val:true);
+  }
+  function askText(message,defVal,onOk){openDialog({message,input:true,value:defVal,onOk});}
+  function askConfirm(message,onOk){openDialog({message,input:false,onOk});}
+  dialogOk.addEventListener("click",()=>closeDialog(true));
+  document.getElementById("dialogCancel").addEventListener("click",()=>closeDialog(false));
+  dialogEl.addEventListener("click",e=>{if(e.target.id==="dialog")closeDialog(false);});
+  dialogInput.addEventListener("keydown",e=>{e.stopPropagation();
+    if(e.key==="Enter"){e.preventDefault();closeDialog(true);}
+    else if(e.key==="Escape"){e.preventDefault();closeDialog(false);}});
 
   // ---------- shape geometry ----------
   function makeShapeEl(shape){
@@ -424,6 +465,11 @@
       sg.rectEl.setAttribute("width",maxX-minX+pad*2);
       sg.rectEl.setAttribute("height",maxY-minY+pad*2+titleH);
       sg.rectEl.setAttribute("rx",12);
+      const col=sg.color||"#8b5cf6";                 // per-group color (customizable)
+      sg.rectEl.setAttribute("fill",col);sg.rectEl.setAttribute("fill-opacity","0.07");
+      sg.rectEl.setAttribute("stroke",col);
+      sg.rectEl.setAttribute("stroke-width","1.4");sg.rectEl.setAttribute("stroke-dasharray","6 4");
+      sg.titleEl.setAttribute("fill",col);
       sg.titleEl.setAttribute("x",minX-pad+12);sg.titleEl.setAttribute("y",minY-pad-titleH+16);
       sg.titleEl.textContent=sg.title;
     });
@@ -432,7 +478,7 @@
     if(!selNodes.size){toast("묶을 노드를 먼저 선택하세요");return;}
     const ids=[...selNodes];
     subgraphs.forEach(sg=>ids.forEach(id=>sg.nodes.delete(id))); // a node lives in one group
-    rebuildGroup({id:++gid,title:"그룹 "+gid,nodes:ids});
+    rebuildGroup({id:++gid,title:"그룹 "+gid,nodes:ids,color:"#8b5cf6"});
     renderGroups();genCode();toast("그룹으로 묶음");
   }
   function ungroup(){
@@ -442,6 +488,19 @@
       const hit=[...selNodes].some(id=>sg.nodes.has(id));
       if(hit){sg.el.remove();removed++;return false;}return true;});
     if(removed){genCode();toast("그룹 해제");}else toast("선택 항목이 속한 그룹이 없습니다");
+  }
+  // groups that contain any currently selected node
+  function selectedGroups(){return subgraphs.filter(sg=>[...selNodes].some(id=>sg.nodes.has(id)));}
+  function applyGroupColor(hex){
+    const gs=selectedGroups();
+    if(!gs.length){toast("색을 바꿀 그룹의 노드를 선택하세요");return;}
+    gs.forEach(sg=>sg.color=hex);renderGroups();genCode();
+  }
+  function renameGroup(){
+    const gs=selectedGroups();
+    if(!gs.length){toast("이름을 바꿀 그룹의 노드를 선택하세요");return;}
+    const sg=gs[0];
+    askText("그룹 이름:",sg.title,v=>{sg.title=String(v==null?"":v).trim()||sg.title;renderGroups();genCode();});
   }
   function updateEmpty(){emptyHint.style.display=nodes.length?"none":"";}
 
@@ -491,6 +550,11 @@
     if(sigMap.size){out+="\n";
       sigMap.forEach((v,sig)=>{out+="    classDef "+v.cls+" "+sig+"\n";});
       sigMap.forEach(v=>{out+="    class "+v.ids.join(",")+" "+v.cls+"\n";});}
+    // subgraph box colors → style SGx
+    subgraphs.forEach(sg=>{
+      if(![...sg.nodes].some(id=>nodes.some(n=>n.id===id)))return;
+      const col=sg.color||"#8b5cf6";
+      out+="    style SG"+sg.id+" fill:"+col+"1f,stroke:"+col+",stroke-width:1.5px\n";});
     codeEl.textContent=out;
     commit();
     return out;
@@ -537,7 +601,9 @@
   // ---------- PNG export ----------
   function exportPNG(){
     if(!nodes.length){toast("먼저 노드를 추가하세요");return;}
-    const fn=askFilename("flowmaid-diagram","png");if(!fn)return;
+    askFilename("flowmaid-diagram","png",fn=>doExportPNG(fn));
+  }
+  function doExportPNG(fn){
     let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
     nodes.forEach(n=>{minX=Math.min(minX,n.x-n.w/2);maxX=Math.max(maxX,n.x+n.w/2);
       minY=Math.min(minY,n.y-n.h/2);maxY=Math.max(maxY,n.y+n.h/2);});
@@ -581,13 +647,10 @@
     root.querySelectorAll(".edge text").forEach(el=>{
       el.setAttribute("fill","#9aa2b1");el.setAttribute("font-size","12");
       el.setAttribute("text-anchor","middle");el.setAttribute("font-family","sans-serif");});
-    // subgraph boxes rely on CSS, which isn't in the exported SVG → set attributes
-    root.querySelectorAll(".subgraph rect").forEach(el=>{
-      el.setAttribute("fill","rgba(139,92,246,0.06)");el.setAttribute("stroke","#8b5cf6");
-      el.setAttribute("stroke-width","1.4");el.setAttribute("stroke-dasharray","6 4");});
+    // subgraph rect fill/stroke are already attributes (per-group color); just add font attrs for the title
     root.querySelectorAll(".subgraph text").forEach(el=>{
-      el.setAttribute("fill","#8b5cf6");el.setAttribute("font-size","13");
-      el.setAttribute("font-weight","600");el.setAttribute("font-family","sans-serif");});
+      el.setAttribute("font-size","13");el.setAttribute("font-weight","600");
+      el.setAttribute("font-family","sans-serif");});
     root.querySelectorAll(".sel").forEach(el=>el.classList.remove("sel"));
   }
 
@@ -684,7 +747,7 @@
     nodes:nodes.map(n=>({id:n.id,label:n.label,shape:n.shape,x:Math.round(n.x),y:Math.round(n.y),
       fill:n.fill,stroke:n.stroke,bstyle:n.bstyle})),
     edges:edges.map(e=>({id:e.id,from:e.from,to:e.to,label:e.label,line:e.line,head:e.head})),
-    groups:subgraphs.map(sg=>({id:sg.id,title:sg.title,nodes:[...sg.nodes]}))};}
+    groups:subgraphs.map(sg=>({id:sg.id,title:sg.title,nodes:[...sg.nodes],color:sg.color}))};}
   function loadState(s){
     clearScene();
     nid=s.nid||0;eid=s.eid||0;gid=s.gid||0;
@@ -704,7 +767,7 @@
   }
   // recreate a subgraph from serialized data
   function rebuildGroup(d){
-    const sg={id:d.id,title:d.title||("그룹 "+d.id),nodes:new Set(d.nodes||[])};
+    const sg={id:d.id,title:d.title||("그룹 "+d.id),nodes:new Set(d.nodes||[]),color:d.color||"#8b5cf6"};
     const g=document.createElementNS(SVGNS,"g");g.setAttribute("class","subgraph");
     const rect=document.createElementNS(SVGNS,"rect");
     const title=document.createElementNS(SVGNS,"text");
@@ -725,6 +788,7 @@
       clearSel();                                 // select members so color/delete apply too
       [...sg.nodes].forEach(id=>{const n=nodes.find(x=>x.id===id);
         if(n){selNodes.add(n.id);n.el.classList.add("sel");}});
+      const gp=document.getElementById("groupColorPick");if(gp)gp.value=sg.color||"#8b5cf6";
       const p=cursorPt(ev);start={x:p.x,y:p.y};
       grp=[...sg.nodes].map(id=>nodes.find(n=>n.id===id)).filter(Boolean).map(n=>({n,x0:n.x,y0:n.y}));
       dragging=true;sg.el.style.cursor="grabbing";
@@ -784,22 +848,23 @@
     toast(edgeCurve?"곡선 화살표":"직선 화살표");}
 
   // ---------- save / load files ----------
-  // ask for a file name; extension is fixed (appended, not user-editable)
-  function askFilename(defName,ext){
-    let name=prompt("파일 이름을 입력하세요 (확장자 ."+ext+" 는 자동으로 붙습니다):",defName);
-    if(name===null)return null;                                  // cancelled
-    name=name.trim().replace(/[\\/:*?"<>|]/g,"_")                // strip illegal chars
-      .replace(new RegExp("\\."+ext+"$","i"),"");                // drop a typed-in extension
-    return (name||defName)+"."+ext;
+  // ask for a file name via the dialog; extension is fixed (appended), cb receives "name.ext"
+  function askFilename(defName,ext,cb){
+    askText("파일 이름을 입력하세요 (."+ext+" 는 자동으로 붙습니다):",defName,val=>{
+      const name=String(val==null?"":val).trim()
+        .replace(/[\\/:*?"<>|]/g,"_")                             // strip illegal chars
+        .replace(new RegExp("\\."+ext+"$","i"),"");               // drop a typed-in extension
+      cb((name||defName)+"."+ext);
+    });
   }
   function download(blob,filename){
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);
     a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   }
   function saveFile(){
-    const fn=askFilename("flowmaid-diagram","json");if(!fn)return;
-    download(new Blob([JSON.stringify(serialize(),null,2)],{type:"application/json"}),fn);
-    toast("저장 완료: "+fn);}
+    askFilename("flowmaid-diagram","json",fn=>{
+      download(new Blob([JSON.stringify(serialize(),null,2)],{type:"application/json"}),fn);
+      toast("저장 완료: "+fn);});}
   function openFile(){document.getElementById("fileInput").click();}
   function handleFile(file){
     const rd=new FileReader();
@@ -876,6 +941,8 @@
   document.getElementById("edgeHead").addEventListener("change",e=>applyEdgeStyle("head",e.target.value));
   document.getElementById("groupBtn").addEventListener("click",makeGroup);
   document.getElementById("ungroupBtn").addEventListener("click",ungroup);
+  document.getElementById("groupRenameBtn").addEventListener("click",renameGroup);
+  document.getElementById("groupColorPick").addEventListener("input",e=>applyGroupColor(e.target.value));
   document.getElementById("delBtn").addEventListener("click",deleteSelected);
   document.getElementById("dir").addEventListener("change",genCode);
   document.getElementById("fitBtn").addEventListener("click",fitView);
@@ -885,13 +952,13 @@
   document.getElementById("pngBtn").addEventListener("click",exportPNG);
   document.getElementById("clearBtn").addEventListener("click",()=>{
     if(!nodes.length)return;
-    if(confirm("모든 노드와 연결을 삭제할까요?")){
-      clearScene();nid=0;eid=0;gid=0;updateEmpty();genCode();}});
+    askConfirm("모든 노드와 연결을 삭제할까요?",()=>{
+      clearScene();nid=0;eid=0;gid=0;updateEmpty();genCode();});});
   document.getElementById("copyBtn").addEventListener("click",()=>{
     navigator.clipboard.writeText(genCode()).then(()=>toast("코드 복사됨"),()=>toast("복사 실패"));});
   document.getElementById("mmdBtn").addEventListener("click",()=>{
-    const fn=askFilename("flowmaid","mmd");if(!fn)return;
-    download(new Blob([genCode()],{type:"text/plain"}),fn);toast(".mmd 저장 완료: "+fn);});
+    askFilename("flowmaid","mmd",fn=>{
+      download(new Blob([genCode()],{type:"text/plain"}),fn);toast(".mmd 저장 완료: "+fn);});});
 
   // ---------- marquee: drag on empty canvas to box-select nodes ----------
   let marquee=null,marqueeEl=null;
@@ -927,6 +994,8 @@
   }
   function isTyping(t){return t&&(t.tagName==="INPUT"||t.tagName==="SELECT"||t.tagName==="TEXTAREA");}
   window.addEventListener("keydown",ev=>{
+    // a dialog is open → only Esc (cancel) is handled here; input has its own handler
+    if(dialogEl.style.display==="flex"){if(ev.key==="Escape")closeDialog(false);return;}
     // capturing a new shortcut in settings
     if(capturing){
       if(ev.key==="Escape"){capturing=null;renderKeyList();ev.preventDefault();return;}
@@ -976,6 +1045,6 @@
     lastCommitted=snapshot();
     updateUndoBtns();
     genCode();
-    fitView();
+    homeView();   // default zoom fixed at 100%
   })();
 })();

@@ -70,6 +70,8 @@
     <div class="grp">
       <button id="groupBtn" title="선택 노드를 그룹으로 묶기">⊞ 그룹</button>
       <button id="ungroupBtn" title="그룹 해제">⊟ 해제</button>
+      <button id="groupRenameBtn" title="그룹 이름 변경">✎ 이름</button>
+      <input type="color" id="groupColorPick" title="그룹 박스 색" value="#8b5cf6">
       <button id="undoBtn" title="실행취소">↶</button>
       <button id="redoBtn" title="다시실행">↷</button>
       <button id="delBtn" class="danger">🗑 삭제</button>
@@ -148,6 +150,16 @@
     <div class="modal-actions">
       <button id="keyReset">기본값 복원</button>
       <button id="keyClose" class="primary">완료</button>
+    </div>
+  </div>
+</div>
+<div id="dialog">
+  <div class="dialog-box">
+    <p id="dialogMsg"></p>
+    <input type="text" id="dialogInput" style="display:none">
+    <div class="dialog-actions">
+      <button id="dialogCancel">취소</button>
+      <button id="dialogOk" class="primary">확인</button>
     </div>
   </div>
 </div>
