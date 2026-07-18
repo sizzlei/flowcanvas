@@ -36,7 +36,7 @@
   /* color swatches */
   .swatch{width:20px;height:20px;border-radius:5px;border:2px solid #0006;cursor:pointer;padding:0}
   .swatch:hover{transform:scale(1.12)}
-  #colorPick,#strokePick{width:34px;height:30px;padding:2px;border:1px solid var(--line);border-radius:7px;
+  #colorPick,#strokePick,#bgPick{width:34px;height:30px;padding:2px;border:1px solid var(--line);border-radius:7px;
     background:var(--panel2);cursor:pointer}
   main{flex:1;display:flex;min-height:0}
   #canvasWrap{flex:1;position:relative;overflow:hidden;background:

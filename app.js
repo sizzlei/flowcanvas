@@ -67,6 +67,7 @@
   let nid=0, eid=0, gid=0;
   let connecting=null; // {source, }
   let edgeCurve=false;
+  let bgColor="#14111f"; // canvas background color
   let edgeDefaults={line:"solid",head:"arrow"}; // style applied to new edges
   const NODE_W=120, NODE_H=54;
   const dirEl=document.getElementById("dir");
@@ -547,7 +548,7 @@
     clone.setAttribute("viewBox",`${minX} ${minY} ${w} ${h}`);
     const bg=document.createElementNS(SVGNS,"rect");
     bg.setAttribute("x",minX);bg.setAttribute("y",minY);bg.setAttribute("width",w);bg.setAttribute("height",h);
-    bg.setAttribute("fill","#14111f");clone.appendChild(bg);
+    bg.setAttribute("fill",bgColor);clone.appendChild(bg);
     clone.appendChild(buildDefs());
     clone.appendChild(gGroups.cloneNode(true));
     clone.appendChild(gEdges.cloneNode(true));
@@ -679,7 +680,7 @@
   function clearScene(){nodes.forEach(n=>n.el.remove());edges.forEach(e=>e.el.remove());
     subgraphs.forEach(sg=>sg.el.remove());
     nodes=[];edges=[];subgraphs=[];selNodes.clear();selEdge=null;}
-  function serialize(){return {v:2,dir:dirEl.value,edgeCurve,nid,eid,gid,
+  function serialize(){return {v:2,dir:dirEl.value,edgeCurve,bgColor,nid,eid,gid,
     nodes:nodes.map(n=>({id:n.id,label:n.label,shape:n.shape,x:Math.round(n.x),y:Math.round(n.y),
       fill:n.fill,stroke:n.stroke,bstyle:n.bstyle})),
     edges:edges.map(e=>({id:e.id,from:e.from,to:e.to,label:e.label,line:e.line,head:e.head})),
@@ -689,6 +690,7 @@
     nid=s.nid||0;eid=s.eid||0;gid=s.gid||0;
     if(s.dir)dirEl.value=s.dir;
     edgeCurve=!!s.edgeCurve;updateCurveBtn();
+    applyBg(s.bgColor||"#14111f");
     (s.nodes||[]).forEach(d=>{const n={id:d.id,label:d.label,shape:d.shape,
       fill:d.fill||DEFAULT_FILL,stroke:d.stroke||DEFAULT_STROKE,bstyle:d.bstyle||"solid",
       x:d.x,y:d.y,w:NODE_W,h:NODE_H,handles:[]};nodes.push(n);renderNode(n);});
@@ -757,6 +759,24 @@
     const u=document.getElementById("undoBtn"),r=document.getElementById("redoBtn");
     if(u)u.style.opacity=undoStack.length?"1":".4";
     if(r)r.style.opacity=redoStack.length?"1":".4";}
+
+  // ---------- background color ----------
+  function mixColor(hex,amt,toward){ // blend hex toward 255 (white) or 0 (black) by amt(0..1)
+    const n=parseInt(hex.slice(1),16);let r=(n>>16)&255,g=(n>>8)&255,b=n&255;
+    r=Math.round(r+(toward-r)*amt);g=Math.round(g+(toward-g)*amt);b=Math.round(b+(toward-b)*amt);
+    return "#"+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1);
+  }
+  function luminance(hex){const n=parseInt(hex.slice(1),16);
+    return (0.299*((n>>16)&255)+0.587*((n>>8)&255)+0.114*(n&255))/255;}
+  function applyBg(hex){
+    bgColor=hex;
+    const dark=luminance(hex)<0.5;
+    const dot=mixColor(hex,dark?0.20:0.16,dark?255:0); // contrasting grid dots
+    canvasWrap.style.background=
+      "radial-gradient(circle at 1px 1px, "+dot+" 1px, transparent 0) 0 0/22px 22px, "+hex;
+    const el=document.getElementById("bgPick");
+    if(el&&el.value.toLowerCase()!==hex.toLowerCase())el.value=hex;
+  }
 
   // ---------- curve toggle ----------
   function updateCurveBtn(){const b=document.getElementById("curveBtn");if(b)b.classList.toggle("on",edgeCurve);}
@@ -849,6 +869,7 @@
       document.getElementById("colorPick").value=sw.dataset.c;});
   });
   document.getElementById("colorPick").addEventListener("input",e=>applyColor(e.target.value));
+  document.getElementById("bgPick").addEventListener("input",e=>{applyBg(e.target.value);genCode();});
   document.getElementById("strokePick").addEventListener("input",e=>applyStroke(e.target.value));
   document.getElementById("strokeStyle").addEventListener("change",e=>applyBstyle(e.target.value));
   document.getElementById("edgeLine").addEventListener("change",e=>applyEdgeStyle("line",e.target.value));
@@ -951,6 +972,7 @@
     else seedDefault();
     restoring=false;
     clearSel();
+    applyBg(bgColor);
     lastCommitted=snapshot();
     updateUndoBtns();
     genCode();
