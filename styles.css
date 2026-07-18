@@ -89,7 +89,7 @@
   .subgraph text{font-size:13px;font-weight:600;cursor:grab}
   .edge path.line{fill:none;stroke:#9c8fce;stroke-width:2}
   .edge.sel path.line{stroke:var(--accent2)!important;stroke-width:3!important}
-  .edge text{fill:var(--muted);font-size:12px;text-anchor:middle}
+  .edge text{fill:var(--text);font-size:12px;font-weight:600;text-anchor:middle}
   .edge .hit{stroke:transparent;stroke-width:16;fill:none;cursor:pointer}
   #tempEdge{fill:none;stroke:var(--accent2);stroke-width:2;stroke-dasharray:5 4;pointer-events:none}
   .marquee{fill:rgba(139,92,246,.14);stroke:var(--accent);stroke-width:1;

@@ -739,7 +739,7 @@
       if(!el.style.stroke)el.style.stroke="#9c8fce";el.setAttribute("fill","none");});
     root.querySelectorAll(".edge .hit").forEach(el=>el.remove());
     root.querySelectorAll(".edge text").forEach(el=>{
-      el.setAttribute("fill","#9aa2b1");el.setAttribute("font-size","12");
+      el.setAttribute("fill","#eceaf3");el.setAttribute("font-size","12");el.setAttribute("font-weight","600");
       el.setAttribute("text-anchor","middle");el.setAttribute("font-family","sans-serif");});
     // subgraph rect fill/stroke are already attributes (per-group color); just add font attrs for the title
     root.querySelectorAll(".subgraph text").forEach(el=>{
