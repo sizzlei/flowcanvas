@@ -119,6 +119,99 @@
     if(e.key==="Enter"){e.preventDefault();closeDialog(true);}
     else if(e.key==="Escape"){e.preventDefault();closeDialog(false);}});
 
+  // ---------- right-click context menu ----------
+  const ctx=document.getElementById("ctxmenu");
+  const FILL_SWATCHES=["#2f2748","#3b6db5","#2f8f6b","#b58a2f","#a8476a","#6b4ea8"];
+  function closeCtx(){ctx.style.display="none";ctx.innerHTML="";}
+  function ctxItem(it){
+    if(it.sep){const d=document.createElement("div");d.className="sepline";return d;}
+    if(it.swatches){                                    // inline color swatch row
+      const row=document.createElement("div");row.className="cm-swatches";
+      it.swatches.forEach(c=>{const b=document.createElement("button");b.className="swatch";
+        b.style.background=c;b.title=c;
+        b.addEventListener("click",e=>{e.stopPropagation();closeCtx();it.onPick(c);});row.appendChild(b);});
+      return row;
+    }
+    const el=document.createElement("div");
+    el.className="item"+(it.danger?" danger":"")+(it.sub?" has-sub":"");
+    const lab=document.createElement("span");lab.textContent=it.label;el.appendChild(lab);
+    if(it.sub){const a=document.createElement("span");a.className="arrow";a.textContent="▸";el.appendChild(a);
+      const sub=document.createElement("div");sub.className="sub";
+      it.sub.forEach(s=>sub.appendChild(ctxItem(s)));el.appendChild(sub);
+    }else{el.addEventListener("click",e=>{e.stopPropagation();closeCtx();it.action&&it.action();});}
+    return el;
+  }
+  function openCtx(x,y,items){
+    ctx.innerHTML="";items.forEach(it=>ctx.appendChild(ctxItem(it)));
+    ctx.style.display="block";ctx.style.left="0px";ctx.style.top="0px";
+    const r=ctx.getBoundingClientRect();
+    ctx.style.left=Math.max(4,Math.min(x,window.innerWidth-r.width-8))+"px";
+    ctx.style.top=Math.max(4,Math.min(y,window.innerHeight-r.height-8))+"px";
+  }
+  window.addEventListener("mousedown",e=>{if(ctx.style.display==="block"&&!ctx.contains(e.target))closeCtx();});
+  window.addEventListener("keydown",e=>{if(e.key==="Escape"&&ctx.style.display==="block")closeCtx();});
+  window.addEventListener("scroll",closeCtx,true);
+  canvasWrap.addEventListener("contextmenu",ev=>{
+    ev.preventDefault();closeCtx();
+    const node=nodeUnder(ev);
+    const edgeEl=ev.target.closest&&ev.target.closest(".edge");
+    const groupEl=ev.target.closest&&ev.target.closest(".subgraph");
+    let items;
+    if(node){
+      if(!selNodes.has(node.id))selectNode(node);
+      items=[
+        {label:"이름 변경",action:()=>{if(selNodes.size===1){const n=nodes.find(x=>selNodes.has(x.id));
+          openInline(ev.clientX,ev.clientY,n.label,v=>{n.label=v.trim()||n.label;refreshNode(n);genCode();});}
+          else toast("단일 노드를 선택하세요");}},
+        {label:"채움 색",swatches:FILL_SWATCHES,onPick:applyColor},
+        {label:"채움 색 직접…",action:()=>document.getElementById("colorPick").click()},
+        {label:"테두리 색 직접…",action:()=>document.getElementById("strokePick").click()},
+        {label:"테두리 스타일",sub:[
+          {label:"─ 실선",action:()=>applyBstyle("solid")},
+          {label:"┈ 점선",action:()=>applyBstyle("dashed")},
+          {label:"━ 굵게",action:()=>applyBstyle("thick")}]},
+        {label:"그룹으로 묶기",action:makeGroup},
+        {sep:true},
+        {label:"삭제",danger:true,action:deleteSelected}];
+    }else if(edgeEl){
+      const e=edges.find(x=>x.id===+edgeEl.dataset.id);if(e)selectEdge(e);
+      items=[
+        {label:"라벨 편집",action:()=>{if(e)openInline(ev.clientX,ev.clientY,e.label,
+          v=>{e.label=v.trim();drawEdge(e);genCode();});}},
+        {label:"선 스타일",sub:[
+          {label:"─ 실선",action:()=>applyEdgeStyle("line","solid")},
+          {label:"┈ 점선",action:()=>applyEdgeStyle("line","dotted")},
+          {label:"━ 굵게",action:()=>applyEdgeStyle("line","thick")}]},
+        {label:"끝 모양",sub:[
+          {label:"→ 화살표",action:()=>applyEdgeStyle("head","arrow")},
+          {label:"— 없음",action:()=>applyEdgeStyle("head","open")},
+          {label:"○ 원",action:()=>applyEdgeStyle("head","circle")},
+          {label:"✕ X",action:()=>applyEdgeStyle("head","cross")},
+          {label:"↔ 양방향",action:()=>applyEdgeStyle("head","bi")}]},
+        {sep:true},
+        {label:"삭제",danger:true,action:deleteSelected}];
+    }else if(groupEl){
+      const sg=subgraphs.find(x=>x.el===groupEl);
+      if(sg){clearSel();[...sg.nodes].forEach(id=>{const n=nodes.find(y=>y.id===id);
+        if(n){selNodes.add(id);n.el.classList.add("sel");}});}
+      items=[
+        {label:"이름 변경",action:()=>sg&&renameGroupSg(sg,ev.clientX,ev.clientY)},
+        {label:"그룹 색",swatches:["#8b5cf6"].concat(FILL_SWATCHES),onPick:applyGroupColor},
+        {label:"그룹 색 직접…",action:()=>document.getElementById("groupColorPick").click()},
+        {sep:true},
+        {label:"그룹 해제",action:ungroup}];
+    }else{
+      const p=cursorPt(ev);
+      const shapes=[["둥근 사각형","round"],["사각형","rect"],["스타디움","stadium"],["마름모","diamond"],
+        ["원","circle"],["육각형","hexagon"],["원통(DB)","cylinder"],["서브루틴","subroutine"]];
+      items=[
+        {label:"노드 추가",sub:shapes.map(s=>({label:s[0],action:()=>{const n=addNode(s[1],p.x,p.y);selectNode(n);}}))},
+        {label:"화면 맞춤",action:fitView},
+        {label:"배경색 직접…",action:()=>document.getElementById("bgPick").click()}];
+    }
+    openCtx(ev.clientX,ev.clientY,items);
+  });
+
   // ---------- shape geometry ----------
   function makeShapeEl(shape){
     if(shape==="diamond"||shape==="hexagon")return document.createElementNS(SVGNS,"polygon");
@@ -343,7 +436,7 @@
     let dragging=false,moved=false,start=null,group=null;
     // body drag = move (moves the whole current selection together)
     n.shapeEl.addEventListener("mousedown",ev=>{
-      if(spaceDown)return;               // space = pan, handled elsewhere
+      if(ev.button!==0||spaceDown)return; // left button only; space = pan
       ev.stopPropagation();
       if(!selNodes.has(n.id))selectNode(n); // clicking an unselected node selects it alone
       const p=cursorPt(ev);start={x:p.x,y:p.y};
@@ -364,7 +457,7 @@
         n.label=v.trim()||n.label;refreshNode(n);genCode();});});
     // handles = drag to connect
     n.handles.forEach(hd=>{
-      hd.addEventListener("mousedown",ev=>{ev.stopPropagation();startConnect(n,ev);});
+      hd.addEventListener("mousedown",ev=>{if(ev.button!==0)return;ev.stopPropagation();startConnect(n,ev);});
     });
   }
 
@@ -495,12 +588,6 @@
     const gs=selectedGroups();
     if(!gs.length){toast("색을 바꿀 그룹의 노드를 선택하세요");return;}
     gs.forEach(sg=>sg.color=hex);renderGroups();genCode();
-  }
-  function renameGroup(){
-    const gs=selectedGroups();
-    if(!gs.length){toast("이름을 바꿀 그룹의 노드를 선택하세요");return;}
-    const sg=gs[0];
-    askText("그룹 이름:",sg.title,v=>{sg.title=String(v==null?"":v).trim()||sg.title;renderGroups();genCode();});
   }
   function updateEmpty(){emptyHint.style.display=nodes.length?"none":"";}
 
@@ -681,7 +768,7 @@
 
   // ---------- pan (Space + drag) & zoom (wheel) ----------
   svg.addEventListener("mousedown",ev=>{
-    if(!spaceDown)return;
+    if(!spaceDown||ev.button!==0)return;
     ev.preventDefault();ev.stopPropagation();
     canvasWrap.classList.add("panning");
     panning={sx:ev.clientX,sy:ev.clientY,vx:view.x,vy:view.y};
@@ -712,6 +799,7 @@
   let paletteDrag=null;
   document.querySelectorAll(".shape-btn").forEach(btn=>{
     btn.addEventListener("mousedown",ev=>{
+      if(ev.button!==0)return;
       ev.preventDefault();
       const ghost=document.createElement("div");
       ghost.className="drag-ghost";
@@ -773,17 +861,20 @@
     const title=document.createElementNS(SVGNS,"text");
     g.appendChild(rect);g.appendChild(title);gGroups.appendChild(g);
     sg.el=g;sg.rectEl=rect;sg.titleEl=title;
-    title.addEventListener("dblclick",ev=>{ev.stopPropagation();
-      openInline(ev.clientX,ev.clientY,sg.title,v=>{sg.title=v.trim()||sg.title;renderGroups();genCode();});});
     wireGroup(sg);
     subgraphs.push(sg);
   }
-  // drag the group box (or its title) to move all member nodes together
+  function renameGroupSg(sg,x,y){
+    openInline(x,y,sg.title,v=>{sg.title=String(v==null?"":v).trim()||sg.title;renderGroups();genCode();});
+  }
+  // drag the group box to move all member nodes; double-click to rename
   function wireGroup(sg){
     let dragging=false,start=null,grp=null;
+    sg.el.addEventListener("dblclick",ev=>{ev.stopPropagation();
+      renameGroupSg(sg,ev.clientX,ev.clientY);});
     sg.el.addEventListener("mousedown",ev=>{
+      if(ev.button!==0)return;                   // left button only (right = context menu)
       if(spaceDown)return;                       // space = pan
-      if(ev.target===sg.titleEl&&ev.detail>=2)return; // let title double-click rename
       ev.stopPropagation();
       clearSel();                                 // select members so color/delete apply too
       [...sg.nodes].forEach(id=>{const n=nodes.find(x=>x.id===id);
@@ -941,7 +1032,6 @@
   document.getElementById("edgeHead").addEventListener("change",e=>applyEdgeStyle("head",e.target.value));
   document.getElementById("groupBtn").addEventListener("click",makeGroup);
   document.getElementById("ungroupBtn").addEventListener("click",ungroup);
-  document.getElementById("groupRenameBtn").addEventListener("click",renameGroup);
   document.getElementById("groupColorPick").addEventListener("input",e=>applyGroupColor(e.target.value));
   document.getElementById("delBtn").addEventListener("click",deleteSelected);
   document.getElementById("dir").addEventListener("change",genCode);
@@ -963,7 +1053,7 @@
   // ---------- marquee: drag on empty canvas to box-select nodes ----------
   let marquee=null,marqueeEl=null;
   svg.addEventListener("mousedown",ev=>{
-    if(spaceDown)return;                                  // space = pan
+    if(ev.button!==0||spaceDown)return;                   // left button only; space = pan
     if(ev.target!==svg&&ev.target.tagName!=="svg")return; // only on empty canvas
     clearSel();
     const s=cursorPt(ev);marquee={x0:s.x,y0:s.y,box:null};

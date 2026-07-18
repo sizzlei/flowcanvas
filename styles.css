@@ -144,3 +144,18 @@
     border:1px solid var(--line);border-radius:8px;padding:9px 11px;outline:none;margin-bottom:4px}
   .dialog-box input:focus{border-color:var(--accent2)}
   .dialog-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:16px}
+  /* right-click context menu */
+  #ctxmenu{position:fixed;z-index:200;display:none;min-width:172px;background:var(--panel);
+    border:1px solid var(--line);border-radius:10px;padding:6px;box-shadow:0 16px 44px rgba(0,0,0,.6)}
+  #ctxmenu .item{position:relative;display:flex;align-items:center;justify-content:space-between;
+    gap:14px;padding:7px 10px;border-radius:7px;font-size:13px;color:var(--text);cursor:pointer;white-space:nowrap}
+  #ctxmenu .item:hover{background:var(--btn-hover)}
+  #ctxmenu .item.danger:hover{color:var(--danger)}
+  #ctxmenu .arrow{color:var(--muted);font-size:11px}
+  #ctxmenu .sepline{height:1px;background:var(--line);margin:5px 4px}
+  #ctxmenu .sub{position:absolute;left:calc(100% + 3px);top:-7px;display:none;min-width:150px;
+    background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;
+    box-shadow:0 16px 44px rgba(0,0,0,.6)}
+  #ctxmenu .item.has-sub:hover>.sub{display:block}
+  #ctxmenu .cm-swatches{display:flex;flex-wrap:wrap;gap:6px;padding:6px 10px;max-width:172px}
+  #ctxmenu .cm-swatches .swatch{width:22px;height:22px}
