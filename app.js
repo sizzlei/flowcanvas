@@ -710,7 +710,29 @@
     sg.el=g;sg.rectEl=rect;sg.titleEl=title;
     title.addEventListener("dblclick",ev=>{ev.stopPropagation();
       openInline(ev.clientX,ev.clientY,sg.title,v=>{sg.title=v.trim()||sg.title;renderGroups();genCode();});});
+    wireGroup(sg);
     subgraphs.push(sg);
+  }
+  // drag the group box (or its title) to move all member nodes together
+  function wireGroup(sg){
+    let dragging=false,start=null,grp=null;
+    sg.el.addEventListener("mousedown",ev=>{
+      if(spaceDown)return;                       // space = pan
+      if(ev.target===sg.titleEl&&ev.detail>=2)return; // let title double-click rename
+      ev.stopPropagation();
+      clearSel();                                 // select members so color/delete apply too
+      [...sg.nodes].forEach(id=>{const n=nodes.find(x=>x.id===id);
+        if(n){selNodes.add(n.id);n.el.classList.add("sel");}});
+      const p=cursorPt(ev);start={x:p.x,y:p.y};
+      grp=[...sg.nodes].map(id=>nodes.find(n=>n.id===id)).filter(Boolean).map(n=>({n,x0:n.x,y0:n.y}));
+      dragging=true;sg.el.style.cursor="grabbing";
+    });
+    window.addEventListener("mousemove",ev=>{
+      if(!dragging)return;const p=cursorPt(ev);const dx=p.x-start.x,dy=p.y-start.y;
+      grp.forEach(g=>{g.n.x=g.x0+dx;g.n.y=g.y0+dy;position(g.n);});
+      edges.forEach(drawEdge);renderGroups();
+    });
+    window.addEventListener("mouseup",()=>{if(dragging){dragging=false;sg.el.style.cursor="grab";genCode();}});
   }
 
   // ---------- history (undo / redo) + autosave ----------
