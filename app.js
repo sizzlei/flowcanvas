@@ -78,7 +78,7 @@
   let nid=0, eid=0, gid=0;
   let connecting=null; // {source, }
   let edgeCurve=false;
-  let bgColor="#14111f"; // canvas background color
+  let bgColor="#0d0b13"; // canvas background color
   let edgeDefaults={line:"solid",head:"arrow"}; // style applied to new edges
   const NODE_W=120, NODE_H=54;
   const dirEl=document.getElementById("dir");
@@ -753,7 +753,7 @@
     nid=s.nid||0;eid=s.eid||0;gid=s.gid||0;
     if(s.dir)dirEl.value=s.dir;
     edgeCurve=!!s.edgeCurve;updateCurveBtn();
-    applyBg(s.bgColor||"#14111f");
+    applyBg(s.bgColor||"#0d0b13");
     (s.nodes||[]).forEach(d=>{const n={id:d.id,label:d.label,shape:d.shape,
       fill:d.fill||DEFAULT_FILL,stroke:d.stroke||DEFAULT_STROKE,bstyle:d.bstyle||"solid",
       x:d.x,y:d.y,w:NODE_W,h:NODE_H,handles:[]};nodes.push(n);renderNode(n);});

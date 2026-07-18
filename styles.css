@@ -4,43 +4,53 @@
  * 섹션: 레이아웃 > 헤더/툴바 > 캔버스/노드/엣지 > 코드 패널 > 모달/토스트
  */
 :root{
-    --bg:#14111f; --panel:#1e1830; --panel2:#271f3d; --line:#3a3152;
-    --text:#ece9f5; --muted:#a99fc4; --accent:#8b5cf6; --accent2:#e879f9;
-    --danger:#ff5c8a; --node:#2f2748; --node-stroke:#8b5cf6; --node-text:#f2ecff;
+    --bg:#0d0b13; --panel:#100d18; --panel2:#181320; --line:#282232;
+    --text:#eceaf3; --muted:#8a8299; --accent:#a274ff; --accent2:#e879f9;
+    --danger:#ff5c8a; --node:#241d38; --node-stroke:#8b5cf6; --node-text:#f2ecff;
+    --btn:#181320; --btn-hover:#221b30; --cap:#6f6786;
   }
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Malgun Gothic","Apple SD Gothic Neo",sans-serif}
   #app{display:flex;flex-direction:column;height:100vh}
-  header{display:flex;align-items:center;gap:10px;padding:10px 16px;
-    background:linear-gradient(180deg,#241c3a,#191428);
-    border-bottom:1px solid var(--line);flex-wrap:wrap;
-    box-shadow:0 1px 0 rgba(255,255,255,.03),0 4px 16px rgba(0,0,0,.25)}
-  header h1{font-size:15px;margin:0 6px 0 0;font-weight:700;letter-spacing:.2px}
+  /* ---------- top toolbar (labeled groups) ---------- */
+  header{display:flex;align-items:stretch;gap:0;padding:7px 10px;
+    background:linear-gradient(180deg,#121019,#0a0810);
+    border-bottom:1px solid #201b2b;flex-wrap:wrap;
+    box-shadow:0 2px 12px rgba(0,0,0,.4)}
+  .brand{display:flex;align-items:center;padding:0 14px 0 4px;margin-right:2px}
+  header h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.3px;color:#f3f0fa}
   header h1 .tag{color:var(--accent);font-weight:800}
-  .sep{width:1px;height:26px;background:var(--line);margin:0 3px}
-  .grp{display:flex;align-items:center;gap:6px}
+  .tbar-grp{display:flex;flex-direction:column;gap:5px;padding:2px 12px;
+    border-left:1px solid #1e1a29;justify-content:center}
+  .grp-cap{font-size:9.5px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;
+    color:var(--cap);padding-left:2px;user-select:none}
+  .grp-row{display:flex;align-items:center;gap:6px}
+  .mini{font-size:11px;color:var(--muted);padding:0 1px;user-select:none}
   label.lbl{font-size:12px;color:var(--muted)}
-  button,select{font-family:inherit;font-size:13px;color:var(--text);background:var(--panel2);
-    border:1px solid var(--line);border-radius:8px;padding:7px 11px;cursor:pointer;transition:.12s}
-  button:hover{border-color:var(--accent);background:#2a2340}
-  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
-  button.danger:hover{border-color:var(--danger);color:var(--danger)}
-  select{padding:7px 8px}
+  button,select{font-family:inherit;font-size:13px;color:var(--text);background:var(--btn);
+    border:1px solid var(--line);border-radius:8px;padding:6px 10px;cursor:pointer;
+    transition:background .12s,border-color .12s,color .12s}
+  button:hover,select:hover{border-color:#4a3f66;background:var(--btn-hover)}
+  button:active{transform:translateY(.5px)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#160a28;font-weight:700}
+  button.primary:hover{filter:brightness(1.08);background:var(--accent)}
+  button.danger:hover{border-color:var(--danger);color:var(--danger);background:var(--btn-hover)}
+  select{padding:6px 8px}
   /* shape palette icons */
-  .shape-btn{width:42px;height:38px;padding:0;display:inline-flex;align-items:center;justify-content:center}
+  .shape-btn{width:40px;height:36px;padding:0;display:inline-flex;align-items:center;justify-content:center}
   .shape-btn svg{width:26px;height:22px;pointer-events:none}
-  .shape-btn svg *{fill:#3a2f5c;stroke:#b18bff;stroke-width:1.6}
+  .shape-btn svg *{fill:#2a2340;stroke:#b18bff;stroke-width:1.6}
   .shape-btn svg text{fill:#d8cff0;stroke:none;font-size:9px}
-  .shape-btn:hover{border-color:var(--accent);background:#2a2340}
+  .shape-btn:hover{border-color:var(--accent);background:var(--btn-hover)}
   /* color swatches */
-  .swatch{width:20px;height:20px;border-radius:5px;border:2px solid #0006;cursor:pointer;padding:0}
+  .swatch{width:20px;height:20px;border-radius:5px;border:2px solid #0008;cursor:pointer;padding:0}
   .swatch:hover{transform:scale(1.12)}
-  #colorPick,#strokePick,#bgPick,#groupColorPick{width:34px;height:30px;padding:2px;border:1px solid var(--line);border-radius:7px;
-    background:var(--panel2);cursor:pointer}
+  #colorPick,#strokePick,#bgPick,#groupColorPick{width:32px;height:30px;padding:2px;border:1px solid var(--line);border-radius:7px;
+    background:var(--btn);cursor:pointer}
   main{flex:1;display:flex;min-height:0}
   #canvasWrap{flex:1;position:relative;overflow:hidden;background:
-    radial-gradient(circle at 1px 1px, #2a2340 1px, transparent 0) 0 0/22px 22px, var(--bg)}
+    radial-gradient(circle at 1px 1px, #201a2e 1px, transparent 0) 0 0/22px 22px, var(--bg)}
   #canvasWrap.pan-ready{cursor:grab}
   #canvasWrap.panning{cursor:grabbing}
   svg{width:100%;height:100%;display:block}

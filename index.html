@@ -10,95 +10,119 @@
 <body>
 <div id="app">
   <header>
-    <h1>Flow<span class="tag">Maid</span></h1>
-    <div class="grp" id="palette">
-      <button class="shape-btn" data-shape="round" title="둥근 사각형">
-        <svg viewBox="0 0 26 22"><rect x="2" y="4" width="22" height="14" rx="7"/></svg></button>
-      <button class="shape-btn" data-shape="rect" title="사각형(처리)">
-        <svg viewBox="0 0 26 22"><rect x="2" y="4" width="22" height="14"/></svg></button>
-      <button class="shape-btn" data-shape="stadium" title="스타디움(시작/끝)">
-        <svg viewBox="0 0 26 22"><rect x="2" y="5" width="22" height="12" rx="6"/></svg></button>
-      <button class="shape-btn" data-shape="diamond" title="마름모(판단)">
-        <svg viewBox="0 0 26 22"><polygon points="13,3 24,11 13,19 2,11"/></svg></button>
-      <button class="shape-btn" data-shape="circle" title="원">
-        <svg viewBox="0 0 26 22"><circle cx="13" cy="11" r="8"/></svg></button>
-      <button class="shape-btn" data-shape="hexagon" title="육각형">
-        <svg viewBox="0 0 26 22"><polygon points="7,3 19,3 24,11 19,19 7,19 2,11"/></svg></button>
-      <button class="shape-btn" data-shape="cylinder" title="원통(DB)">
-        <svg viewBox="0 0 26 22"><path d="M5 6 a8 3 0 0 1 16 0 v10 a8 3 0 0 1 -16 0 z"/></svg></button>
-      <button class="shape-btn" data-shape="subroutine" title="서브루틴">
-        <svg viewBox="0 0 26 22"><rect x="2" y="5" width="22" height="12"/><line x1="6" y1="5" x2="6" y2="17"/><line x1="20" y1="5" x2="20" y2="17"/></svg></button>
-    </div>
-    <div class="sep"></div>
-    <div class="grp">
-      <label class="lbl">색</label>
-      <button class="swatch" data-c="#2f2748" style="background:#2f2748" title="기본"></button>
-      <button class="swatch" data-c="#3b6db5" style="background:#3b6db5" title="파랑"></button>
-      <button class="swatch" data-c="#2f8f6b" style="background:#2f8f6b" title="초록"></button>
-      <button class="swatch" data-c="#b58a2f" style="background:#b58a2f" title="노랑"></button>
-      <button class="swatch" data-c="#a8476a" style="background:#a8476a" title="분홍"></button>
-      <button class="swatch" data-c="#6b4ea8" style="background:#6b4ea8" title="보라"></button>
-      <input type="color" id="colorPick" value="#8b5cf6" title="채우기 색 직접 선택">
-      <label class="lbl">테두리</label>
-      <input type="color" id="strokePick" value="#8b5cf6" title="테두리 색">
-      <select id="strokeStyle" title="테두리 스타일">
-        <option value="solid">─ 실선</option>
-        <option value="dashed">┈ 점선</option>
-        <option value="thick">━ 굵게</option>
-      </select>
-      <label class="lbl">배경</label>
-      <input type="color" id="bgPick" value="#14111f" title="캔버스 배경색">
-    </div>
-    <div class="sep"></div>
-    <div class="grp" id="edgeCtl" title="선택한 화살표 / 새 화살표 스타일">
-      <label class="lbl">선</label>
-      <select id="edgeLine">
-        <option value="solid">─ 실선</option>
-        <option value="dotted">┈ 점선</option>
-        <option value="thick">━ 굵게</option>
-      </select>
-      <label class="lbl">끝</label>
-      <select id="edgeHead">
-        <option value="arrow">→ 화살표</option>
-        <option value="open">— 없음</option>
-        <option value="circle">○ 원</option>
-        <option value="cross">✕ X</option>
-        <option value="bi">↔ 양방향</option>
-      </select>
-    </div>
-    <div class="sep"></div>
-    <div class="grp">
-      <button id="groupBtn" title="선택 노드를 그룹으로 묶기">⊞ 그룹</button>
-      <button id="ungroupBtn" title="그룹 해제">⊟ 해제</button>
-      <button id="groupRenameBtn" title="그룹 이름 변경">✎ 이름</button>
-      <input type="color" id="groupColorPick" title="그룹 박스 색" value="#8b5cf6">
-      <button id="undoBtn" title="실행취소">↶</button>
-      <button id="redoBtn" title="다시실행">↷</button>
-      <button id="delBtn" class="danger">🗑 삭제</button>
-      <button id="curveBtn" title="곡선/직선 화살표">⤳ 곡선</button>
-      <label class="lbl">방향</label>
-      <select id="dir">
-        <option value="TD">↓ TD</option>
-        <option value="LR">→ LR</option>
-        <option value="BT">↑ BT</option>
-        <option value="RL">← RL</option>
-      </select>
-    </div>
-    <div class="sep"></div>
-    <div class="grp" id="zoomCtl">
-      <button id="zoomOut" title="축소">−</button>
-      <button id="zoomLevel" title="100%로 재설정">100%</button>
-      <button id="zoomIn" title="확대">＋</button>
-    </div>
-    <div class="sep"></div>
-    <div class="grp">
-      <button id="fitBtn" title="화면 맞춤">⤢ 맞춤</button>
-      <button id="saveBtn" title="파일로 저장">💾 저장</button>
-      <button id="openBtn" title="파일 불러오기">📂 열기</button>
-      <button id="pngBtn" class="primary">🖼 PNG</button>
-      <button id="settingsBtn" title="단축키 설정">⚙</button>
-      <button id="clearBtn" class="danger">초기화</button>
-    </div>
+    <div class="brand"><h1>Flow<span class="tag">Maid</span></h1></div>
+
+    <section class="tbar-grp">
+      <span class="grp-cap">도형</span>
+      <div class="grp-row" id="palette">
+        <button class="shape-btn" data-shape="round" title="둥근 사각형">
+          <svg viewBox="0 0 26 22"><rect x="2" y="4" width="22" height="14" rx="7"/></svg></button>
+        <button class="shape-btn" data-shape="rect" title="사각형(처리)">
+          <svg viewBox="0 0 26 22"><rect x="2" y="4" width="22" height="14"/></svg></button>
+        <button class="shape-btn" data-shape="stadium" title="스타디움(시작/끝)">
+          <svg viewBox="0 0 26 22"><rect x="2" y="5" width="22" height="12" rx="6"/></svg></button>
+        <button class="shape-btn" data-shape="diamond" title="마름모(판단)">
+          <svg viewBox="0 0 26 22"><polygon points="13,3 24,11 13,19 2,11"/></svg></button>
+        <button class="shape-btn" data-shape="circle" title="원">
+          <svg viewBox="0 0 26 22"><circle cx="13" cy="11" r="8"/></svg></button>
+        <button class="shape-btn" data-shape="hexagon" title="육각형">
+          <svg viewBox="0 0 26 22"><polygon points="7,3 19,3 24,11 19,19 7,19 2,11"/></svg></button>
+        <button class="shape-btn" data-shape="cylinder" title="원통(DB)">
+          <svg viewBox="0 0 26 22"><path d="M5 6 a8 3 0 0 1 16 0 v10 a8 3 0 0 1 -16 0 z"/></svg></button>
+        <button class="shape-btn" data-shape="subroutine" title="서브루틴">
+          <svg viewBox="0 0 26 22"><rect x="2" y="5" width="22" height="12"/><line x1="6" y1="5" x2="6" y2="17"/><line x1="20" y1="5" x2="20" y2="17"/></svg></button>
+      </div>
+    </section>
+
+    <section class="tbar-grp">
+      <span class="grp-cap">노드 스타일</span>
+      <div class="grp-row">
+        <span class="mini">채움</span>
+        <button class="swatch" data-c="#2f2748" style="background:#2f2748" title="기본"></button>
+        <button class="swatch" data-c="#3b6db5" style="background:#3b6db5" title="파랑"></button>
+        <button class="swatch" data-c="#2f8f6b" style="background:#2f8f6b" title="초록"></button>
+        <button class="swatch" data-c="#b58a2f" style="background:#b58a2f" title="노랑"></button>
+        <button class="swatch" data-c="#a8476a" style="background:#a8476a" title="분홍"></button>
+        <input type="color" id="colorPick" value="#8b5cf6" title="채우기 색 직접 선택">
+        <span class="mini">테두리</span>
+        <input type="color" id="strokePick" value="#8b5cf6" title="테두리 색">
+        <select id="strokeStyle" title="테두리 스타일">
+          <option value="solid">─ 실선</option>
+          <option value="dashed">┈ 점선</option>
+          <option value="thick">━ 굵게</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="tbar-grp">
+      <span class="grp-cap">화살표</span>
+      <div class="grp-row" id="edgeCtl" title="선택한 화살표 / 새 화살표 기본값">
+        <span class="mini">선</span>
+        <select id="edgeLine">
+          <option value="solid">─ 실선</option>
+          <option value="dotted">┈ 점선</option>
+          <option value="thick">━ 굵게</option>
+        </select>
+        <span class="mini">끝</span>
+        <select id="edgeHead">
+          <option value="arrow">→ 화살표</option>
+          <option value="open">— 없음</option>
+          <option value="circle">○ 원</option>
+          <option value="cross">✕ X</option>
+          <option value="bi">↔ 양방향</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="tbar-grp">
+      <span class="grp-cap">그룹</span>
+      <div class="grp-row">
+        <button id="groupBtn" title="선택 노드를 그룹으로 묶기">⊞ 묶기</button>
+        <button id="ungroupBtn" title="그룹 해제">⊟ 해제</button>
+        <button id="groupRenameBtn" title="그룹 이름 변경">✎ 이름</button>
+        <input type="color" id="groupColorPick" title="그룹 박스 색" value="#8b5cf6">
+      </div>
+    </section>
+
+    <section class="tbar-grp">
+      <span class="grp-cap">편집</span>
+      <div class="grp-row">
+        <button id="undoBtn" title="실행취소">↶</button>
+        <button id="redoBtn" title="다시실행">↷</button>
+        <button id="delBtn" class="danger" title="삭제">🗑</button>
+        <button id="curveBtn" title="곡선/직선 화살표">⤳ 곡선</button>
+        <span class="mini">방향</span>
+        <select id="dir">
+          <option value="TD">↓ TD</option>
+          <option value="LR">→ LR</option>
+          <option value="BT">↑ BT</option>
+          <option value="RL">← RL</option>
+        </select>
+      </div>
+    </section>
+
+    <section class="tbar-grp">
+      <span class="grp-cap">보기</span>
+      <div class="grp-row">
+        <button id="zoomOut" title="축소">−</button>
+        <button id="zoomLevel" title="100%로 재설정">100%</button>
+        <button id="zoomIn" title="확대">＋</button>
+        <button id="fitBtn" title="화면 맞춤">⤢ 맞춤</button>
+        <span class="mini">배경</span>
+        <input type="color" id="bgPick" value="#0d0b13" title="캔버스 배경색">
+      </div>
+    </section>
+
+    <section class="tbar-grp">
+      <span class="grp-cap">파일</span>
+      <div class="grp-row">
+        <button id="saveBtn" title="파일로 저장">💾 저장</button>
+        <button id="openBtn" title="파일 불러오기">📂 열기</button>
+        <button id="pngBtn" class="primary" title="PNG 내보내기">🖼 PNG</button>
+        <button id="settingsBtn" title="단축키 설정">⚙</button>
+        <button id="clearBtn" class="danger" title="전체 초기화">초기화</button>
+      </div>
+    </section>
     <input type="file" id="fileInput" accept="application/json,.json" style="display:none">
   </header>
   <main>
