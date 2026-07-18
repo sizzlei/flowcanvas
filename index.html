@@ -22,6 +22,12 @@
         <svg viewBox="0 0 26 22"><polygon points="13,3 24,11 13,19 2,11"/></svg></button>
       <button class="shape-btn" data-shape="circle" title="원">
         <svg viewBox="0 0 26 22"><circle cx="13" cy="11" r="8"/></svg></button>
+      <button class="shape-btn" data-shape="hexagon" title="육각형">
+        <svg viewBox="0 0 26 22"><polygon points="7,3 19,3 24,11 19,19 7,19 2,11"/></svg></button>
+      <button class="shape-btn" data-shape="cylinder" title="원통(DB)">
+        <svg viewBox="0 0 26 22"><path d="M5 6 a8 3 0 0 1 16 0 v10 a8 3 0 0 1 -16 0 z"/></svg></button>
+      <button class="shape-btn" data-shape="subroutine" title="서브루틴">
+        <svg viewBox="0 0 26 22"><rect x="2" y="5" width="22" height="12"/><line x1="6" y1="5" x2="6" y2="17"/><line x1="20" y1="5" x2="20" y2="17"/></svg></button>
     </div>
     <div class="sep"></div>
     <div class="grp">
@@ -32,10 +38,36 @@
       <button class="swatch" data-c="#b58a2f" style="background:#b58a2f" title="노랑"></button>
       <button class="swatch" data-c="#a8476a" style="background:#a8476a" title="분홍"></button>
       <button class="swatch" data-c="#6b4ea8" style="background:#6b4ea8" title="보라"></button>
-      <input type="color" id="colorPick" value="#8b5cf6" title="직접 선택">
+      <input type="color" id="colorPick" value="#8b5cf6" title="채우기 색 직접 선택">
+      <label class="lbl">테두리</label>
+      <input type="color" id="strokePick" value="#8b5cf6" title="테두리 색">
+      <select id="strokeStyle" title="테두리 스타일">
+        <option value="solid">─ 실선</option>
+        <option value="dashed">┈ 점선</option>
+        <option value="thick">━ 굵게</option>
+      </select>
+    </div>
+    <div class="sep"></div>
+    <div class="grp" id="edgeCtl" title="선택한 화살표 / 새 화살표 스타일">
+      <label class="lbl">선</label>
+      <select id="edgeLine">
+        <option value="solid">─ 실선</option>
+        <option value="dotted">┈ 점선</option>
+        <option value="thick">━ 굵게</option>
+      </select>
+      <label class="lbl">끝</label>
+      <select id="edgeHead">
+        <option value="arrow">→ 화살표</option>
+        <option value="open">— 없음</option>
+        <option value="circle">○ 원</option>
+        <option value="cross">✕ X</option>
+        <option value="bi">↔ 양방향</option>
+      </select>
     </div>
     <div class="sep"></div>
     <div class="grp">
+      <button id="groupBtn" title="선택 노드를 그룹으로 묶기">⊞ 그룹</button>
+      <button id="ungroupBtn" title="그룹 해제">⊟ 해제</button>
       <button id="undoBtn" title="실행취소">↶</button>
       <button id="redoBtn" title="다시실행">↷</button>
       <button id="delBtn" class="danger">🗑 삭제</button>
@@ -91,8 +123,10 @@
         · 노드 드래그 = 이동 / 더블클릭 = 이름 변경<br>
         · 노드의 <b>초록 점</b>을 다른 노드로 드래그 = 연결<br>
         · 빈 곳 <b>드래그 = 영역 선택</b> (여러 노드 동시 이동·삭제·색상)<br>
-        · 노드 선택 후 색상 클릭 = 색 변경<br>
-        · 화살표 더블클릭 = 라벨 입력 / Delete = 삭제<br>
+        · 노드 선택 후 <b>채우기/테두리</b> 색·스타일 변경<br>
+        · 화살표 선택 후 <b>선/끝</b> 모양 변경 (점선·굵게·원·X·양방향)<br>
+        · 선택 후 <b>⊞ 그룹</b> = 서브그래프로 묶기<br>
+        · 화살표 더블클릭 = 라벨 / Delete = 삭제<br>
         · <b>Space + 드래그</b> = 화면 이동 · <b>휠</b> = 확대/축소
       </div>
     </aside>

@@ -36,7 +36,7 @@
   /* color swatches */
   .swatch{width:20px;height:20px;border-radius:5px;border:2px solid #0006;cursor:pointer;padding:0}
   .swatch:hover{transform:scale(1.12)}
-  #colorPick{width:34px;height:30px;padding:2px;border:1px solid var(--line);border-radius:7px;
+  #colorPick,#strokePick{width:34px;height:30px;padding:2px;border:1px solid var(--line);border-radius:7px;
     background:var(--panel2);cursor:pointer}
   main{flex:1;display:flex;min-height:0}
   #canvasWrap{flex:1;position:relative;overflow:hidden;background:
@@ -62,16 +62,22 @@
   #inlineEditor:after{content:"";position:absolute;left:50%;bottom:-7px;transform:translateX(-50%);
     border-left:7px solid transparent;border-right:7px solid transparent;border-top:7px solid var(--accent2)}
   .node{filter:drop-shadow(0 3px 6px rgba(0,0,0,.35))}
-  .node .shape{stroke:var(--node-stroke);stroke-width:2;transition:stroke .12s,fill .12s}
-  .node.sel .shape{stroke:var(--accent2);stroke-width:3}
+  /* stroke/fill/dash are set as attributes in JS; selection uses !important to always win */
+  .node .shape{transition:stroke .12s,fill .12s}
+  .node .decor{fill:none}
+  .node.sel .shape{stroke:var(--accent2)!important;stroke-width:3!important}
   .node text.lbl-t{fill:var(--node-text);font-size:14px;text-anchor:middle;dominant-baseline:middle;
     pointer-events:none;user-select:none}
   .node{cursor:grab}
   .handle{fill:var(--accent2);stroke:#fff;stroke-width:1.5;opacity:0;cursor:crosshair;transition:opacity .1s}
   .node:hover .handle,.node.sel .handle{opacity:.95}
-  .node.droptarget .shape{stroke:var(--accent2);stroke-width:3.5}
+  .node.droptarget .shape{stroke:var(--accent2)!important;stroke-width:3.5!important}
+  /* subgraph container */
+  .subgraph rect{fill:rgba(139,92,246,.06);stroke:var(--accent);stroke-width:1.4;
+    stroke-dasharray:6 4;rx:12}
+  .subgraph text{fill:var(--accent);font-size:13px;font-weight:600}
   .edge path.line{fill:none;stroke:#9c8fce;stroke-width:2}
-  .edge.sel path.line{stroke:var(--accent2);stroke-width:3}
+  .edge.sel path.line{stroke:var(--accent2)!important;stroke-width:3!important}
   .edge text{fill:var(--muted);font-size:12px;text-anchor:middle}
   .edge .hit{stroke:transparent;stroke-width:16;fill:none;cursor:pointer}
   #tempEdge{fill:none;stroke:var(--accent2);stroke-width:2;stroke-dasharray:5 4;pointer-events:none}

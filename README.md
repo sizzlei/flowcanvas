@@ -7,10 +7,13 @@ No build step, no server, no dependencies. Open `index.html` in any modern brows
 ## ✨ Features
 
 - **Draw, don't code** — drag shapes from the top palette onto the canvas; the Mermaid code is generated automatically as you work.
+- **8 node shapes** — rounded, rectangle, stadium, diamond, circle, hexagon, cylinder (DB), and subroutine.
 - **Drag-to-connect** — hover a node and drag the glowing handle to another node to draw an arrow.
-- **Box-select** — drag on the empty canvas to select multiple nodes, then move, delete, or recolor them together.
+- **Edge styles** — solid / dotted / thick lines and arrow / open / circle / cross / bidirectional ends.
+- **Subgraphs** — box-select nodes and group them into a titled `subgraph` container (double-click the title to rename).
+- **Box-select** — drag on the empty canvas to select multiple nodes, then move, delete, recolor, or group them together.
 - **Auto text wrapping** — long labels wrap onto multiple lines and the node grows to fit.
-- **Node colors** — recolor selected nodes from the swatches or a custom color picker (reflected in the exported Mermaid `style` lines).
+- **Node styling** — fill color, border color, and border style (solid/dashed/thick). Nodes sharing a style are emitted as a reusable Mermaid `classDef`.
 - **Curved or straight arrows** — toggle with a click (or `Cmd/Ctrl+E`).
 - **Canvas navigation** — hold **Space + drag** to pan, scroll to zoom, `F` to fit the whole diagram.
 - **Undo / Redo** — `Cmd/Ctrl+Z` and `Cmd/Ctrl+Shift+Z`.

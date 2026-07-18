@@ -47,23 +47,36 @@
   }
   let spaceDown=false, panning=null;
 
-  const DEFAULT_FILL="#2f2748";
-  let nodes=[]; // {id,label,shape,x,y,w,h,fill,el,shapeEl,textEl,handles[]}
-  let edges=[]; // {id,from,to,label,el,pathEl,hitEl,textEl,bgEl}
-  let nid=0, eid=0;
+  const DEFAULT_FILL="#2f2748", DEFAULT_STROKE="#8b5cf6";
+  let nodes=[]; // {id,label,shape,x,y,w,h,fill,stroke,bstyle,el,shapeEl,textEl,handles[],decor[]}
+  let edges=[]; // {id,from,to,label,line,head,el,pathEl,hitEl,textEl,bgEl}
+  let subgraphs=[]; // {id,title,nodes:Set,el,rectEl,titleEl}
+  let nid=0, eid=0, gid=0;
   let connecting=null; // {source, }
   let edgeCurve=false;
+  let edgeDefaults={line:"solid",head:"arrow"}; // style applied to new edges
   const NODE_W=120, NODE_H=54;
   const dirEl=document.getElementById("dir");
+  // layer for subgraph boxes, drawn behind edges/nodes
+  const gGroups=document.createElementNS(SVGNS,"g");gGroups.setAttribute("id","groups");
+  svg.insertBefore(gGroups,gEdges);
 
   function toast(m){const t=document.getElementById("toast");t.textContent=m;
     t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),1700);}
 
   // ---------- shape geometry ----------
   function makeShapeEl(shape){
-    if(shape==="diamond")return document.createElementNS(SVGNS,"polygon");
+    if(shape==="diamond"||shape==="hexagon")return document.createElementNS(SVGNS,"polygon");
     if(shape==="circle")return document.createElementNS(SVGNS,"ellipse");
+    if(shape==="cylinder")return document.createElementNS(SVGNS,"path");
     return document.createElementNS(SVGNS,"rect");
+  }
+  // border color/style are stored on the node and applied as attributes
+  function applyStrokeAttrs(el,n){
+    el.setAttribute("stroke",n.stroke||DEFAULT_STROKE);
+    el.setAttribute("stroke-width",n.bstyle==="thick"?4:2);
+    if(n.bstyle==="dashed")el.setAttribute("stroke-dasharray","6 4");
+    else el.removeAttribute("stroke-dasharray");
   }
   // ---- text measurement + wrapping ----
   const LINE_H=18, MAX_TEXT_W=170;
@@ -98,6 +111,9 @@
     let h=Math.max(NODE_H,16+lines.length*LINE_H);
     if(n.shape==="circle"){const d=Math.max(w,h,NODE_H+22);return {w:d,h:d};}
     if(n.shape==="diamond"){return {w:w+30,h:h+18};}
+    if(n.shape==="hexagon"){return {w:w+30,h};}
+    if(n.shape==="cylinder"){return {w,h:h+18};}
+    if(n.shape==="subroutine"){return {w:w+18,h};}
     return {w,h};
   }
   function renderText(n,lines){
@@ -111,19 +127,45 @@
   function drawShape(n){
     const lines=wrapLabel(n.label);
     const {w,h}=sizeFor(n,lines);n.w=w;n.h=h;const s=n.shapeEl;
+    const hw=w/2,hh=h/2;
     if(n.shape==="diamond"){
-      s.setAttribute("points",`0,${-h/2} ${w/2},0 0,${h/2} ${-w/2},0`);
+      s.setAttribute("points",`0,${-hh} ${hw},0 0,${hh} ${-hw},0`);
+    }else if(n.shape==="hexagon"){
+      const nx=Math.min(hw-6,22);
+      s.setAttribute("points",`${-hw+nx},${-hh} ${hw-nx},${-hh} ${hw},0 ${hw-nx},${hh} ${-hw+nx},${hh} ${-hw},0`);
     }else if(n.shape==="circle"){
-      s.setAttribute("cx",0);s.setAttribute("cy",0);s.setAttribute("rx",w/2);s.setAttribute("ry",h/2);
-    }else{
-      s.setAttribute("x",-w/2);s.setAttribute("y",-h/2);
+      s.setAttribute("cx",0);s.setAttribute("cy",0);s.setAttribute("rx",hw);s.setAttribute("ry",hh);
+    }else if(n.shape==="cylinder"){
+      const ey=Math.min(12,Math.max(6,h*0.16));
+      s.setAttribute("d",`M ${-hw},${-hh+ey} L ${-hw},${hh-ey} A ${hw} ${ey} 0 0 0 ${hw},${hh-ey} `
+        +`L ${hw},${-hh+ey} A ${hw} ${ey} 0 0 0 ${-hw},${-hh+ey} Z`);
+    }else{ // rect / round / stadium / subroutine
+      s.setAttribute("x",-hw);s.setAttribute("y",-hh);
       s.setAttribute("width",w);s.setAttribute("height",h);
-      const rad=n.shape==="rect"?0:(n.shape==="stadium"?h/2:12);
+      const rad=(n.shape==="rect"||n.shape==="subroutine")?0:(n.shape==="stadium"?hh:12);
       s.setAttribute("rx",rad);s.setAttribute("ry",rad);
     }
     s.setAttribute("fill",n.fill||DEFAULT_FILL);
+    applyStrokeAttrs(s,n);
+    // decorative sub-elements
+    if(n.decor&&n.decor.length){
+      const col=n.stroke||DEFAULT_STROKE;
+      if(n.shape==="subroutine"){
+        const ins=6;
+        n.decor[0].setAttribute("x1",-hw+ins);n.decor[0].setAttribute("y1",-hh);
+        n.decor[0].setAttribute("x2",-hw+ins);n.decor[0].setAttribute("y2",hh);
+        n.decor[1].setAttribute("x1",hw-ins);n.decor[1].setAttribute("y1",-hh);
+        n.decor[1].setAttribute("x2",hw-ins);n.decor[1].setAttribute("y2",hh);
+        n.decor.forEach(d=>{d.setAttribute("stroke",col);d.setAttribute("stroke-width",2);});
+      }else if(n.shape==="cylinder"){
+        const ey=Math.min(12,Math.max(6,h*0.16));
+        const e=n.decor[0];
+        e.setAttribute("cx",0);e.setAttribute("cy",-hh+ey);e.setAttribute("rx",hw);e.setAttribute("ry",ey);
+        e.setAttribute("stroke",col);e.setAttribute("stroke-width",2);
+      }
+    }
     renderText(n,lines);
-    const pos=[[0,-h/2],[w/2,0],[0,h/2],[-w/2,0]];
+    const pos=[[0,-hh],[hw,0],[0,hh],[-hw,0]];
     n.handles.forEach((hd,i)=>{hd.setAttribute("cx",pos[i][0]);hd.setAttribute("cy",pos[i][1]);hd.setAttribute("r",6);});
   }
   function renderNode(n){
@@ -131,7 +173,14 @@
     g.setAttribute("class","node");g.dataset.id=n.id;
     const s=makeShapeEl(n.shape);s.setAttribute("class","shape");
     const t=document.createElementNS(SVGNS,"text");t.setAttribute("class","lbl-t");
-    g.appendChild(s);g.appendChild(t);
+    g.appendChild(s);
+    // decor: subroutine gets 2 side lines, cylinder gets a top rim ellipse
+    n.decor=[];
+    if(n.shape==="subroutine"){for(let i=0;i<2;i++){const l=document.createElementNS(SVGNS,"line");
+      l.setAttribute("class","decor");g.appendChild(l);n.decor.push(l);}}
+    else if(n.shape==="cylinder"){const e=document.createElementNS(SVGNS,"ellipse");
+      e.setAttribute("class","decor");g.appendChild(e);n.decor.push(e);}
+    g.appendChild(t);
     n.handles=[];
     for(let i=0;i<4;i++){const c=document.createElementNS(SVGNS,"circle");
       c.setAttribute("class","handle");c.dataset.dir=i;g.appendChild(c);n.handles.push(c);}
@@ -163,7 +212,7 @@
       d=`M ${p1.x} ${p1.y} L ${p2.x} ${p2.y}`;
     }
     e.pathEl.setAttribute("d",d);e.hitEl.setAttribute("d",d);
-    e.pathEl.setAttribute("marker-end","url(#arrow)");
+    styleEdge(e);
     if(e.label){
       e.textEl.setAttribute("x",mx);e.textEl.setAttribute("y",my-6);e.textEl.textContent=e.label;
       e.bgEl.setAttribute("x",mx-e.label.length*3.7-4);e.bgEl.setAttribute("y",my-18);
@@ -201,8 +250,12 @@
     else if(selEdge!=null){const e=edges.find(x=>x.id===selEdge);if(e)e.el.classList.remove("sel");selEdge=null;}
     selNodes.add(n.id);n.el.classList.add("sel");
     document.getElementById("colorPick").value=rgbToHex(n.fill||DEFAULT_FILL);
+    document.getElementById("strokePick").value=rgbToHex(n.stroke||DEFAULT_STROKE);
+    document.getElementById("strokeStyle").value=n.bstyle||"solid";
   }
-  function selectEdge(e){clearSel();selEdge=e.id;e.el.classList.add("sel");}
+  function selectEdge(e){clearSel();selEdge=e.id;e.el.classList.add("sel");
+    document.getElementById("edgeLine").value=e.line||"solid";
+    document.getElementById("edgeHead").value=e.head||"arrow";}
   function rgbToHex(c){return c&&c.startsWith("#")?c:"#2f2748";}
 
   // ---------- pointer helpers ----------
@@ -232,7 +285,7 @@
       const dx=p.x-start.x,dy=p.y-start.y;
       if(Math.abs(dx)+Math.abs(dy)>1)moved=true;
       group.forEach(g=>{g.n.x=g.x0+dx;g.n.y=g.y0+dy;position(g.n);});
-      edges.forEach(drawEdge);
+      edges.forEach(drawEdge);renderGroups();
     });
     window.addEventListener("mouseup",()=>{if(dragging){dragging=false;n.el.style.cursor="grab";if(moved)genCode();}});
     n.el.addEventListener("dblclick",ev=>{ev.stopPropagation();
@@ -277,13 +330,16 @@
 
   // ---------- CRUD ----------
   function addNode(shape,x,y,label){
-    const n={id:++nid,label:label||("노드"+nid),shape:shape||"round",fill:DEFAULT_FILL,
+    const n={id:++nid,label:label||("노드"+nid),shape:shape||"round",
+      fill:DEFAULT_FILL,stroke:DEFAULT_STROKE,bstyle:"solid",
       x:x??(160+Math.random()*300),y:y??(120+Math.random()*240),w:NODE_W,h:NODE_H,handles:[]};
     nodes.push(n);renderNode(n);updateEmpty();genCode();return n;
   }
-  function addEdge(from,to,label){
+  function addEdge(from,to,label,style){
     if(edges.some(e=>e.from===from&&e.to===to)){toast("이미 연결됨");return;}
-    const e={id:++eid,from,to,label:label||""};edges.push(e);renderEdge(e);genCode();
+    const e={id:++eid,from,to,label:label||"",
+      line:(style&&style.line)||edgeDefaults.line,head:(style&&style.head)||edgeDefaults.head};
+    edges.push(e);renderEdge(e);genCode();
   }
   function deleteSelected(){
     if(selEdge!=null){                               // delete the selected edge
@@ -297,50 +353,154 @@
     edges=edges.filter(e=>!ids.has(e.from)&&!ids.has(e.to));
     nodes.filter(n=>ids.has(n.id)).forEach(n=>n.el.remove());
     nodes=nodes.filter(n=>!ids.has(n.id));
-    selNodes.clear();updateEmpty();genCode();
+    subgraphs.forEach(sg=>ids.forEach(id=>sg.nodes.delete(id)));
+    selNodes.clear();updateEmpty();renderGroups();genCode();
   }
-  function applyColor(hex){                           // recolor every selected node
+  function applyColor(hex){                           // recolor every selected node's fill
     if(!selNodes.size){toast("색을 바꿀 노드를 먼저 선택하세요");return;}
     selNodes.forEach(id=>{const n=nodes.find(x=>x.id===id);
       if(n){n.fill=hex;n.shapeEl.setAttribute("fill",hex);}});
     genCode();
   }
+  function applyStroke(hex){                          // recolor every selected node's border
+    if(!selNodes.size){toast("테두리를 바꿀 노드를 먼저 선택하세요");return;}
+    selNodes.forEach(id=>{const n=nodes.find(x=>x.id===id);if(n){n.stroke=hex;drawShape(n);}});
+    genCode();
+  }
+  function applyBstyle(style){                        // border style: solid/dashed/thick
+    if(!selNodes.size){toast("테두리를 바꿀 노드를 먼저 선택하세요");return;}
+    selNodes.forEach(id=>{const n=nodes.find(x=>x.id===id);if(n){n.bstyle=style;drawShape(n);}});
+    genCode();
+  }
+  // apply line/head to the selected edge (and remember as default for new edges)
+  function applyEdgeStyle(part,val){
+    edgeDefaults[part]=val;
+    if(selEdge!=null){const e=edges.find(x=>x.id===selEdge);if(e){e[part]=val;drawEdge(e);genCode();}}
+  }
+
+  // ---------- subgraphs ----------
+  function renderGroups(){
+    // drop groups that lost all members
+    subgraphs=subgraphs.filter(sg=>{
+      const mem=[...sg.nodes].filter(id=>nodes.some(n=>n.id===id));
+      if(!mem.length){sg.el.remove();return false;}return true;});
+    subgraphs.forEach(sg=>{
+      const mem=[...sg.nodes].map(id=>nodes.find(n=>n.id===id)).filter(Boolean);
+      let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
+      mem.forEach(n=>{minX=Math.min(minX,n.x-n.w/2);maxX=Math.max(maxX,n.x+n.w/2);
+        minY=Math.min(minY,n.y-n.h/2);maxY=Math.max(maxY,n.y+n.h/2);});
+      const pad=22,titleH=24;
+      sg.rectEl.setAttribute("x",minX-pad);sg.rectEl.setAttribute("y",minY-pad-titleH);
+      sg.rectEl.setAttribute("width",maxX-minX+pad*2);
+      sg.rectEl.setAttribute("height",maxY-minY+pad*2+titleH);
+      sg.rectEl.setAttribute("rx",12);
+      sg.titleEl.setAttribute("x",minX-pad+12);sg.titleEl.setAttribute("y",minY-pad-titleH+16);
+      sg.titleEl.textContent=sg.title;
+    });
+  }
+  function makeGroup(){
+    if(!selNodes.size){toast("묶을 노드를 먼저 선택하세요");return;}
+    const ids=[...selNodes];
+    subgraphs.forEach(sg=>ids.forEach(id=>sg.nodes.delete(id))); // a node lives in one group
+    rebuildGroup({id:++gid,title:"그룹 "+gid,nodes:ids});
+    renderGroups();genCode();toast("그룹으로 묶음");
+  }
+  function ungroup(){
+    if(!selNodes.size){toast("해제할 그룹의 노드를 선택하세요");return;}
+    let removed=0;
+    subgraphs=subgraphs.filter(sg=>{
+      const hit=[...selNodes].some(id=>sg.nodes.has(id));
+      if(hit){sg.el.remove();removed++;return false;}return true;});
+    if(removed){genCode();toast("그룹 해제");}else toast("선택 항목이 속한 그룹이 없습니다");
+  }
   function updateEmpty(){emptyHint.style.display=nodes.length?"none":"";}
 
   // ---------- mermaid code ----------
-  const wrap={rect:['[',']'],round:['(',')'],stadium:['([','])'],diamond:['{','}'],circle:['((','))']};
+  const wrap={rect:['[',']'],round:['(',')'],stadium:['([','])'],diamond:['{','}'],
+    circle:['((','))'],hexagon:['{{','}}'],cylinder:['[(',')]'],subroutine:['[[',']]']};
   function san(t){return '"'+String(t==null?"":t).replace(/"/g,"'").replace(/\n/g," ")+'"';}
-  function txtColor(hex){ // pick readable stroke-lighten
-    return "#e6ecff";
+  function nodeDef(n){const w=wrap[n.shape]||wrap.round;return "N"+n.id+w[0]+san(n.label)+w[1];}
+  // connector token for a given edge line + head
+  const CONN={
+    solid:{arrow:"-->",open:"---",circle:"--o",cross:"--x",bi:"<-->"},
+    dotted:{arrow:"-.->",open:"-.-",circle:"-.-o",cross:"-.-x",bi:"<-.->"},
+    thick:{arrow:"==>",open:"===",circle:"==o",cross:"==x",bi:"<==>"}};
+  function edgeConn(e){return (CONN[e.line]&&CONN[e.line][e.head])||"-->";}
+  // classDef signature for a node's custom style (null = default, no style needed)
+  function nodeStyleSig(n){
+    const fill=n.fill||DEFAULT_FILL,stroke=n.stroke||DEFAULT_STROKE,b=n.bstyle||"solid";
+    if(fill===DEFAULT_FILL&&stroke===DEFAULT_STROKE&&b==="solid")return null;
+    let s="fill:"+fill+",stroke:"+stroke+",stroke-width:"+(b==="thick"?"3px":"1px")+",color:#f2ecff";
+    if(b==="dashed")s+=",stroke-dasharray:5 3";
+    return s;
   }
   function genCode(){
     let out="";
     if(edgeCurve)out+="%%{init: {'flowchart': {'curve': 'basis'}}}%%\n";
     out+="flowchart "+dirEl.value+"\n";
-    nodes.forEach(n=>{const w=wrap[n.shape]||wrap.round;
-      out+="    N"+n.id+w[0]+san(n.label)+w[1]+"\n";});
-    edges.forEach(e=>{out+= e.label
-      ? "    N"+e.from+" -->|"+san(e.label)+"| N"+e.to+"\n"
-      : "    N"+e.from+" --> N"+e.to+"\n";});
-    const styled=nodes.filter(n=>(n.fill||DEFAULT_FILL)!==DEFAULT_FILL);
-    if(styled.length){out+="\n";styled.forEach(n=>{
-      out+="    style N"+n.id+" fill:"+n.fill+",stroke:#8b5cf6,color:#f2ecff\n";});}
+    // subgraphs first (their member node definitions live inside the block)
+    const inGroup=new Set();
+    subgraphs.forEach(sg=>{
+      const mem=[...sg.nodes].filter(id=>nodes.some(n=>n.id===id));
+      if(!mem.length)return;
+      out+="    subgraph SG"+sg.id+"["+san(sg.title)+"]\n";
+      mem.forEach(id=>{inGroup.add(id);out+="        "+nodeDef(nodes.find(n=>n.id===id))+"\n";});
+      out+="    end\n";
+    });
+    // free nodes (not in any subgraph)
+    nodes.forEach(n=>{if(!inGroup.has(n.id))out+="    "+nodeDef(n)+"\n";});
+    // edges
+    edges.forEach(e=>{const c=edgeConn(e);
+      out+= e.label ? "    N"+e.from+" "+c+"|"+san(e.label)+"| N"+e.to+"\n"
+                    : "    N"+e.from+" "+c+" N"+e.to+"\n";});
+    // classDef + class (group nodes that share the same custom style → reusable class)
+    const sigMap=new Map();let ci=0;
+    nodes.forEach(n=>{const sig=nodeStyleSig(n);if(!sig)return;
+      if(!sigMap.has(sig))sigMap.set(sig,{cls:"fm"+(++ci),ids:[]});
+      sigMap.get(sig).ids.push("N"+n.id);});
+    if(sigMap.size){out+="\n";
+      sigMap.forEach((v,sig)=>{out+="    classDef "+v.cls+" "+sig+"\n";});
+      sigMap.forEach(v=>{out+="    class "+v.ids.join(",")+" "+v.cls+"\n";});}
     codeEl.textContent=out;
     commit();
     return out;
   }
 
-  // ---------- arrow marker ----------
+  // ---------- edge styling + markers ----------
+  // set stroke width/dash + start/end markers from e.line and e.head
+  function styleEdge(e){
+    const p=e.pathEl;
+    p.style.stroke="#9c8fce";
+    p.style.strokeWidth=(e.line==="thick"?4:2);
+    p.style.strokeDasharray=(e.line==="dotted"?"5 4":"");
+    const endMap={arrow:"arrow",open:"",circle:"circleEnd",cross:"crossEnd",bi:"arrow"};
+    const endId=(e.head in endMap)?endMap[e.head]:"arrow";
+    if(endId)p.setAttribute("marker-end","url(#"+endId+")");else p.removeAttribute("marker-end");
+    if(e.head==="bi")p.setAttribute("marker-start","url(#arrow)");else p.removeAttribute("marker-start");
+  }
   function buildDefs(){
     const defs=document.createElementNS(SVGNS,"defs");
-    const m=document.createElementNS(SVGNS,"marker");
-    m.setAttribute("id","arrow");m.setAttribute("viewBox","0 0 10 10");
-    m.setAttribute("refX","9");m.setAttribute("refY","5");
-    m.setAttribute("markerWidth","7");m.setAttribute("markerHeight","7");
-    m.setAttribute("orient","auto-start-reverse");
-    const p=document.createElementNS(SVGNS,"path");
-    p.setAttribute("d","M 0 0 L 10 5 L 0 10 z");p.setAttribute("fill","#9c8fce");
-    m.appendChild(p);defs.appendChild(m);return defs;
+    const COL="#9c8fce";
+    const mk=(id,refX,orient,child)=>{
+      const m=document.createElementNS(SVGNS,"marker");
+      m.setAttribute("id",id);m.setAttribute("viewBox","0 0 10 10");
+      m.setAttribute("refX",refX);m.setAttribute("refY","5");
+      m.setAttribute("markerWidth","8");m.setAttribute("markerHeight","8");
+      m.setAttribute("orient",orient);child.forEach(c=>m.appendChild(c));defs.appendChild(m);
+    };
+    const path=(d,fill,stroke)=>{const p=document.createElementNS(SVGNS,"path");p.setAttribute("d",d);
+      if(fill)p.setAttribute("fill",fill);else p.setAttribute("fill","none");
+      if(stroke){p.setAttribute("stroke",stroke);p.setAttribute("stroke-width","1.6");}return p;};
+    // triangular arrow (used for both ends via auto-start-reverse)
+    mk("arrow","9","auto-start-reverse",[path("M 0 0 L 10 5 L 0 10 z",COL)]);
+    // hollow circle terminator (--o)
+    const circ=document.createElementNS(SVGNS,"circle");
+    circ.setAttribute("cx","5");circ.setAttribute("cy","5");circ.setAttribute("r","4");
+    circ.setAttribute("fill",COL);
+    mk("circleEnd","5","auto",[circ]);
+    // cross terminator (--x)
+    mk("crossEnd","5","auto",[path("M 1 1 L 9 9",null,COL),path("M 9 1 L 1 9",null,COL)]);
+    return defs;
   }
   svg.insertBefore(buildDefs(),svg.firstChild);
 
@@ -359,6 +519,7 @@
     bg.setAttribute("x",minX);bg.setAttribute("y",minY);bg.setAttribute("width",w);bg.setAttribute("height",h);
     bg.setAttribute("fill","#14111f");clone.appendChild(bg);
     clone.appendChild(buildDefs());
+    clone.appendChild(gGroups.cloneNode(true));
     clone.appendChild(gEdges.cloneNode(true));
     clone.appendChild(gNodes.cloneNode(true));
     inlineStyles(clone);
@@ -375,20 +536,29 @@
     img.src="data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(svgStr)));
   }
   function inlineStyles(root){
+    // node shape/decor already carry fill+stroke+dash as attributes → keep them, just fill gaps
     root.querySelectorAll(".node .shape").forEach(el=>{
       if(!el.getAttribute("fill"))el.setAttribute("fill",DEFAULT_FILL);
-      el.setAttribute("stroke","#8b5cf6");el.setAttribute("stroke-width","2");});
+      if(!el.getAttribute("stroke"))el.setAttribute("stroke",DEFAULT_STROKE);});
     root.querySelectorAll(".node text").forEach(el=>{
       el.setAttribute("fill","#f2ecff");el.setAttribute("font-size","14");
       el.setAttribute("text-anchor","middle");el.setAttribute("dominant-baseline","middle");
       el.setAttribute("font-family","sans-serif");});
     root.querySelectorAll(".handle").forEach(el=>el.remove());
+    // edge lines carry color/width/dash as inline styles (preserved in clone)
     root.querySelectorAll(".edge path.line").forEach(el=>{
-      el.setAttribute("stroke","#9c8fce");el.setAttribute("stroke-width","2");el.setAttribute("fill","none");});
+      if(!el.style.stroke)el.style.stroke="#9c8fce";el.setAttribute("fill","none");});
     root.querySelectorAll(".edge .hit").forEach(el=>el.remove());
     root.querySelectorAll(".edge text").forEach(el=>{
       el.setAttribute("fill","#9aa2b1");el.setAttribute("font-size","12");
       el.setAttribute("text-anchor","middle");el.setAttribute("font-family","sans-serif");});
+    // subgraph boxes rely on CSS, which isn't in the exported SVG → set attributes
+    root.querySelectorAll(".subgraph rect").forEach(el=>{
+      el.setAttribute("fill","rgba(139,92,246,0.06)");el.setAttribute("stroke","#8b5cf6");
+      el.setAttribute("stroke-width","1.4");el.setAttribute("stroke-dasharray","6 4");});
+    root.querySelectorAll(".subgraph text").forEach(el=>{
+      el.setAttribute("fill","#8b5cf6");el.setAttribute("font-size","13");
+      el.setAttribute("font-weight","600");el.setAttribute("font-family","sans-serif");});
     root.querySelectorAll(".sel").forEach(el=>el.classList.remove("sel"));
   }
 
@@ -479,21 +649,40 @@
 
   // ---------- serialize / load ----------
   function clearScene(){nodes.forEach(n=>n.el.remove());edges.forEach(e=>e.el.remove());
-    nodes=[];edges=[];selNodes.clear();selEdge=null;}
-  function serialize(){return {v:1,dir:dirEl.value,edgeCurve,nid,eid,
-    nodes:nodes.map(n=>({id:n.id,label:n.label,shape:n.shape,x:Math.round(n.x),y:Math.round(n.y),fill:n.fill})),
-    edges:edges.map(e=>({id:e.id,from:e.from,to:e.to,label:e.label}))};}
+    subgraphs.forEach(sg=>sg.el.remove());
+    nodes=[];edges=[];subgraphs=[];selNodes.clear();selEdge=null;}
+  function serialize(){return {v:2,dir:dirEl.value,edgeCurve,nid,eid,gid,
+    nodes:nodes.map(n=>({id:n.id,label:n.label,shape:n.shape,x:Math.round(n.x),y:Math.round(n.y),
+      fill:n.fill,stroke:n.stroke,bstyle:n.bstyle})),
+    edges:edges.map(e=>({id:e.id,from:e.from,to:e.to,label:e.label,line:e.line,head:e.head})),
+    groups:subgraphs.map(sg=>({id:sg.id,title:sg.title,nodes:[...sg.nodes]}))};}
   function loadState(s){
     clearScene();
-    nid=s.nid||0;eid=s.eid||0;
+    nid=s.nid||0;eid=s.eid||0;gid=s.gid||0;
     if(s.dir)dirEl.value=s.dir;
     edgeCurve=!!s.edgeCurve;updateCurveBtn();
-    (s.nodes||[]).forEach(d=>{const n={id:d.id,label:d.label,shape:d.shape,fill:d.fill||DEFAULT_FILL,
+    (s.nodes||[]).forEach(d=>{const n={id:d.id,label:d.label,shape:d.shape,
+      fill:d.fill||DEFAULT_FILL,stroke:d.stroke||DEFAULT_STROKE,bstyle:d.bstyle||"solid",
       x:d.x,y:d.y,w:NODE_W,h:NODE_H,handles:[]};nodes.push(n);renderNode(n);});
-    (s.edges||[]).forEach(d=>{const e={id:d.id,from:d.from,to:d.to,label:d.label||""};edges.push(e);renderEdge(e);});
+    (s.edges||[]).forEach(d=>{const e={id:d.id,from:d.from,to:d.to,label:d.label||"",
+      line:d.line||"solid",head:d.head||"arrow"};edges.push(e);renderEdge(e);});
+    (s.groups||[]).forEach(d=>rebuildGroup(d));
     nid=Math.max(nid,0,...nodes.map(n=>n.id));
     eid=Math.max(eid,0,...edges.map(e=>e.id));
-    updateEmpty();genCode();
+    gid=Math.max(gid,0,...subgraphs.map(sg=>sg.id));
+    updateEmpty();renderGroups();genCode();
+  }
+  // recreate a subgraph from serialized data
+  function rebuildGroup(d){
+    const sg={id:d.id,title:d.title||("그룹 "+d.id),nodes:new Set(d.nodes||[])};
+    const g=document.createElementNS(SVGNS,"g");g.setAttribute("class","subgraph");
+    const rect=document.createElementNS(SVGNS,"rect");
+    const title=document.createElementNS(SVGNS,"text");
+    g.appendChild(rect);g.appendChild(title);gGroups.appendChild(g);
+    sg.el=g;sg.rectEl=rect;sg.titleEl=title;
+    title.addEventListener("dblclick",ev=>{ev.stopPropagation();
+      openInline(ev.clientX,ev.clientY,sg.title,v=>{sg.title=v.trim()||sg.title;renderGroups();genCode();});});
+    subgraphs.push(sg);
   }
 
   // ---------- history (undo / redo) + autosave ----------
@@ -598,6 +787,12 @@
       document.getElementById("colorPick").value=sw.dataset.c;});
   });
   document.getElementById("colorPick").addEventListener("input",e=>applyColor(e.target.value));
+  document.getElementById("strokePick").addEventListener("input",e=>applyStroke(e.target.value));
+  document.getElementById("strokeStyle").addEventListener("change",e=>applyBstyle(e.target.value));
+  document.getElementById("edgeLine").addEventListener("change",e=>applyEdgeStyle("line",e.target.value));
+  document.getElementById("edgeHead").addEventListener("change",e=>applyEdgeStyle("head",e.target.value));
+  document.getElementById("groupBtn").addEventListener("click",makeGroup);
+  document.getElementById("ungroupBtn").addEventListener("click",ungroup);
   document.getElementById("delBtn").addEventListener("click",deleteSelected);
   document.getElementById("dir").addEventListener("change",genCode);
   document.getElementById("fitBtn").addEventListener("click",fitView);
@@ -605,8 +800,7 @@
   document.getElementById("clearBtn").addEventListener("click",()=>{
     if(!nodes.length)return;
     if(confirm("모든 노드와 연결을 삭제할까요?")){
-      nodes.forEach(n=>n.el.remove());edges.forEach(e=>e.el.remove());
-      nodes=[];edges=[];selNodes.clear();selEdge=null;nid=0;eid=0;updateEmpty();genCode();}});
+      clearScene();nid=0;eid=0;gid=0;updateEmpty();genCode();}});
   document.getElementById("copyBtn").addEventListener("click",()=>{
     navigator.clipboard.writeText(genCode()).then(()=>toast("코드 복사됨"),()=>toast("복사 실패"));});
   document.getElementById("mmdBtn").addEventListener("click",()=>{
