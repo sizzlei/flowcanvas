@@ -57,11 +57,22 @@
   }
   function initView(){const r=svg.getBoundingClientRect();
     view.w=r.width||1000;view.h=r.height||700;view.x=0;view.y=0;applyView();}
-  function fitView(){
-    if(!nodes.length){initView();return;}
+  // bounding box of all content (nodes + subgraph boxes, which extend above nodes for the title)
+  function contentBounds(){
     let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
     nodes.forEach(n=>{minX=Math.min(minX,n.x-n.w/2);maxX=Math.max(maxX,n.x+n.w/2);
       minY=Math.min(minY,n.y-n.h/2);maxY=Math.max(maxY,n.y+n.h/2);});
+    (typeof subgraphs!=="undefined"?subgraphs:[]).forEach(sg=>{
+      if(!sg.rectEl||![...sg.nodes].some(id=>nodes.some(n=>n.id===id)))return;
+      const x=+sg.rectEl.getAttribute("x"),y=+sg.rectEl.getAttribute("y"),
+        w=+sg.rectEl.getAttribute("width"),h=+sg.rectEl.getAttribute("height");
+      minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x+w);maxY=Math.max(maxY,y+h);
+    });
+    return {minX,minY,maxX,maxY};
+  }
+  function fitView(){
+    if(!nodes.length){initView();return;}
+    let {minX,minY,maxX,maxY}=contentBounds();
     const pad=70;minX-=pad;minY-=pad;maxX+=pad;maxY+=pad;
     const bw=maxX-minX,bh=maxY-minY;
     const r=svg.getBoundingClientRect();const aspect=(r.width/r.height)||1.43;
@@ -689,9 +700,7 @@
     askFilename("flowmaid-diagram","png",fn=>doExportPNG(fn));
   }
   function doExportPNG(fn){
-    let minX=1e9,minY=1e9,maxX=-1e9,maxY=-1e9;
-    nodes.forEach(n=>{minX=Math.min(minX,n.x-n.w/2);maxX=Math.max(maxX,n.x+n.w/2);
-      minY=Math.min(minY,n.y-n.h/2);maxY=Math.max(maxY,n.y+n.h/2);});
+    const b=contentBounds();let{minX,minY,maxX,maxY}=b;
     const pad=40;minX-=pad;minY-=pad;maxX+=pad;maxY+=pad;
     const w=Math.ceil(maxX-minX),h=Math.ceil(maxY-minY),scale=2;
     const clone=document.createElementNS(SVGNS,"svg");
