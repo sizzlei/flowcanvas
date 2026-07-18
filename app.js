@@ -413,13 +413,11 @@
     if(!additive)clearSel();
     else if(selEdge!=null){const e=edges.find(x=>x.id===selEdge);if(e)e.el.classList.remove("sel");selEdge=null;}
     selNodes.add(n.id);n.el.classList.add("sel");
+    // keep hidden pickers in sync so the right-click "직접…" opens with the node's current color
     document.getElementById("colorPick").value=rgbToHex(n.fill||DEFAULT_FILL);
     document.getElementById("strokePick").value=rgbToHex(n.stroke||DEFAULT_STROKE);
-    document.getElementById("strokeStyle").value=n.bstyle||"solid";
   }
-  function selectEdge(e){clearSel();selEdge=e.id;e.el.classList.add("sel");
-    document.getElementById("edgeLine").value=e.line||"solid";
-    document.getElementById("edgeHead").value=e.head||"arrow";}
+  function selectEdge(e){clearSel();selEdge=e.id;e.el.classList.add("sel");}
   function rgbToHex(c){return c&&c.startsWith("#")?c:"#2f2748";}
 
   // ---------- pointer helpers ----------
@@ -1020,19 +1018,11 @@
   const appEl=document.getElementById("app");
   document.getElementById("hideCode").addEventListener("click",()=>appEl.classList.add("code-hidden"));
   document.getElementById("showCode").addEventListener("click",()=>appEl.classList.remove("code-hidden"));
-  document.querySelectorAll(".swatch").forEach(sw=>{
-    sw.addEventListener("click",()=>{applyColor(sw.dataset.c);
-      document.getElementById("colorPick").value=sw.dataset.c;});
-  });
+  // hidden color pickers (triggered from the right-click menu)
   document.getElementById("colorPick").addEventListener("input",e=>applyColor(e.target.value));
-  document.getElementById("bgPick").addEventListener("input",e=>{applyBg(e.target.value);genCode();});
   document.getElementById("strokePick").addEventListener("input",e=>applyStroke(e.target.value));
-  document.getElementById("strokeStyle").addEventListener("change",e=>applyBstyle(e.target.value));
-  document.getElementById("edgeLine").addEventListener("change",e=>applyEdgeStyle("line",e.target.value));
-  document.getElementById("edgeHead").addEventListener("change",e=>applyEdgeStyle("head",e.target.value));
-  document.getElementById("groupBtn").addEventListener("click",makeGroup);
-  document.getElementById("ungroupBtn").addEventListener("click",ungroup);
   document.getElementById("groupColorPick").addEventListener("input",e=>applyGroupColor(e.target.value));
+  document.getElementById("bgPick").addEventListener("input",e=>{applyBg(e.target.value);genCode();});
   document.getElementById("delBtn").addEventListener("click",deleteSelected);
   document.getElementById("dir").addEventListener("change",genCode);
   document.getElementById("fitBtn").addEventListener("click",fitView);
