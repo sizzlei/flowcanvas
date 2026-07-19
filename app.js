@@ -808,43 +808,54 @@
   // One finger → forwarded to mouse events (node/handle/marquee/group drag).
   // Two fingers → pan the canvas. Prevents the page from scrolling during a drag.
   (function touchBridge(){
-    let panT=null,lpTimer=null,lpStart=null;
+    let gesture=null,lpTimer=null,t0=null;
     const avg=t=>({x:(t[0].clientX+t[1].clientX)/2,y:(t[0].clientY+t[1].clientY)/2});
-    const fwd=(type,touch,target)=>{
-      const el=target||document.elementFromPoint(touch.clientX,touch.clientY)||canvasWrap;
+    const dist=t=>Math.hypot(t[0].clientX-t[1].clientX,t[0].clientY-t[1].clientY);
+    const fwd=(type,pt,target)=>{
+      const el=target||document.elementFromPoint(pt.clientX,pt.clientY)||canvasWrap;
       el.dispatchEvent(new MouseEvent(type,{bubbles:true,cancelable:true,
-        clientX:touch.clientX,clientY:touch.clientY,button:0}));
+        clientX:pt.clientX,clientY:pt.clientY,button:0}));
     };
     const cancelLP=()=>{if(lpTimer){clearTimeout(lpTimer);lpTimer=null;}};
     canvasWrap.addEventListener("touchstart",e=>{
       cancelLP();
-      if(e.touches.length===2){e.preventDefault();const a=avg(e.touches);
-        panT={x:a.x,y:a.y,vx:view.x,vy:view.y};return;}
+      if(e.touches.length===2){                       // two fingers → pinch-zoom + pan
+        e.preventDefault();t0=null;
+        gesture={mid:avg(e.touches),dist:dist(e.touches),
+          vx:view.x,vy:view.y,vw:view.w,vh:view.h,r:svg.getBoundingClientRect()};
+        return;
+      }
       if(e.touches.length!==1)return;
-      e.preventDefault();                       // stop scroll + suppress emulated mouse events
+      e.preventDefault();                             // stop scroll + suppress emulated mouse events
       const t=e.touches[0],target=e.target;
       fwd("mousedown",t,target);
-      // long-press → context menu (pen/touch replacement for right-click)
-      lpStart={x:t.clientX,y:t.clientY};
-      lpTimer=setTimeout(()=>{lpTimer=null;fwd("mouseup",t,window);   // end any armed drag first
-        showContextMenu(t.clientX,t.clientY,target);},520);
+      t0={x:t.clientX,y:t.clientY,target,time:Date.now(),moved:false};
+      lpTimer=setTimeout(()=>{lpTimer=null;fwd("mouseup",t,window); // end armed drag, then open menu
+        if(t0)t0.menu=true;showContextMenu(t.clientX,t.clientY,target);},520);
     },{passive:false});
     canvasWrap.addEventListener("touchmove",e=>{
-      if(panT&&e.touches.length===2){e.preventDefault();
-        const a=avg(e.touches),r=svg.getBoundingClientRect();
-        view.x=panT.vx-(a.x-panT.x)*(view.w/r.width);
-        view.y=panT.vy-(a.y-panT.y)*(view.h/r.height);applyView();return;}
-      if(e.touches.length!==1)return;
+      if(gesture&&e.touches.length===2){e.preventDefault();
+        const a=avg(e.touches),d=dist(e.touches)||1,r=gesture.r;
+        let nw=Math.min(6000,Math.max(120,gesture.vw*(gesture.dist/d)));
+        const nh=gesture.vh*(nw/gesture.vw);
+        const fx=gesture.vx+(gesture.mid.x-r.left)/r.width*gesture.vw;   // focal point (diagram coords)
+        const fy=gesture.vy+(gesture.mid.y-r.top)/r.height*gesture.vh;
+        view.w=nw;view.h=nh;
+        view.x=fx-(a.x-r.left)/r.width*nw;
+        view.y=fy-(a.y-r.top)/r.height*nh;applyView();return;}
+      if(e.touches.length!==1||!t0)return;
       const t=e.touches[0];
-      if(lpStart&&Math.abs(t.clientX-lpStart.x)+Math.abs(t.clientY-lpStart.y)>8)cancelLP(); // it's a drag
+      if(Math.abs(t.clientX-t0.x)+Math.abs(t.clientY-t0.y)>8){t0.moved=true;cancelLP();}
       e.preventDefault();fwd("mousemove",t,window);
     },{passive:false});
     canvasWrap.addEventListener("touchend",e=>{
-      const wasLP=!lpTimer&&lpStart&&ctx.style.display==="block";
       cancelLP();
-      if(panT&&e.touches.length<2)panT=null;
-      if(!wasLP&&e.changedTouches.length){fwd("mouseup",e.changedTouches[0],window);}
-      lpStart=null;
+      if(gesture&&e.touches.length<2)gesture=null;
+      if(t0&&!t0.menu&&e.changedTouches.length){
+        const c=e.changedTouches[0];fwd("mouseup",c,window);
+        if(!t0.moved&&Date.now()-t0.time<500)fwd("click",c,t0.target); // tap → click (selects edges etc.)
+      }
+      t0=null;
     },{passive:false});
   })();
 
