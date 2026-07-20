@@ -1142,6 +1142,33 @@
     }
     if(marqueeEl){marqueeEl.remove();marqueeEl=null;}marquee=null;
   }
+  // ---------- Enter = edit the selected object's name/label ----------
+  // diagram coords -> client(screen) coords, so the inline editor lands on the target
+  function diagramToClient(x,y){const m=svg.getScreenCTM();
+    return {x:m.a*x+m.c*y+m.e, y:m.b*x+m.d*y+m.f};}
+  // open the inline editor for whatever is currently selected (node / edge / group)
+  function editSelected(){
+    if(inlineEl.style.display==="block")return;         // already editing
+    if(selEdge!=null){                                  // edge → edit its label
+      const e=edges.find(x=>x.id===selEdge);if(!e)return;
+      const a=nodes.find(n=>n.id===e.from),b=nodes.find(n=>n.id===e.to);if(!a||!b)return;
+      const p=diagramToClient((a.x+b.x)/2,(a.y+b.y)/2);
+      openInline(p.x,p.y,e.label,v=>{e.label=v.trim();drawEdge(e);genCode();});return;
+    }
+    if(selNodes.size===1){                              // single node → edit its name
+      const n=nodes.find(x=>selNodes.has(x.id));if(!n)return;
+      const p=diagramToClient(n.x,n.y);
+      openInline(p.x,p.y,n.label,v=>{n.label=v.trim()||n.label;refreshNode(n);genCode();});return;
+    }
+    if(selNodes.size>1){                                // selection equals a group's members → rename group
+      const sg=subgraphs.find(g=>g.nodes.size===selNodes.size&&[...g.nodes].every(id=>selNodes.has(id)));
+      if(sg&&sg.rectEl){
+        const p=diagramToClient(+sg.rectEl.getAttribute("x")+12,+sg.rectEl.getAttribute("y")+16);
+        renameGroupSg(sg,p.x,p.y);return;
+      }
+      toast("이름을 변경할 대상 하나만 선택하세요");
+    }
+  }
   function isTyping(t){return t&&(t.tagName==="INPUT"||t.tagName==="SELECT"||t.tagName==="TEXTAREA");}
   window.addEventListener("keydown",ev=>{
     // a dialog is open → only Esc (cancel) is handled here; input has its own handler
@@ -1157,6 +1184,9 @@
       if(!spaceDown){spaceDown=true;canvasWrap.classList.add("pan-ready");}
       ev.preventDefault();return;}
     if(isTyping(ev.target))return;
+    // Enter (no modifiers) = edit the selected object's name/label
+    if(ev.key==="Enter"&&!ev.metaKey&&!ev.ctrlKey&&!ev.altKey){
+      ev.preventDefault();editSelected();return;}
     const action=actionForCombo(comboFromEvent(ev));
     if(action){ev.preventDefault();runAction(action);}});
   window.addEventListener("keyup",ev=>{
