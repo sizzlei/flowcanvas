@@ -386,7 +386,7 @@
         n.imgEl.setAttribute("preserveAspectRatio","xMidYMid meet");
         n.imgEl.setAttributeNS(XLINK,"href",n.img||"");n.imgEl.setAttribute("href",n.img||"");}
       const t=n.textEl;while(t.firstChild)t.removeChild(t.firstChild);
-      t.setAttribute("fill",contrastText(bgColor));       // label sits on the canvas → follow bg
+      t.style.fill=contrastText(bgColor);       // inline style beats the CSS rule; label follows bg
       if(n.label){const ts=document.createElementNS(SVGNS,"tspan");
         ts.setAttribute("x",0);ts.setAttribute("y",hh+15);ts.textContent=n.label;t.appendChild(ts);}
       const pos=[[0,-hh],[hw,0],[0,hh],[-hw,0]];
@@ -414,7 +414,7 @@
       s.setAttribute("rx",rad);s.setAttribute("ry",rad);
     }
     s.setAttribute("fill",n.fill||DEFAULT_FILL);
-    n.textEl.setAttribute("fill",contrastText(n.fill||DEFAULT_FILL));   // label sits on the shape → follow fill
+    n.textEl.style.fill=contrastText(n.fill||DEFAULT_FILL);   // inline style beats CSS; follow the shape fill
     applyStrokeAttrs(s,n);
     // decorative sub-elements
     if(n.decor&&n.decor.length){
@@ -1110,7 +1110,7 @@
     canvasWrap.style.background=
       "radial-gradient(circle at 1px 1px, "+dot+" 1px, transparent 0) 0 0/22px 22px, "+hex;
     const b=document.getElementById("bgBtn");
-    if(b)b.textContent=dark?"🌙 다크":"☀️ 라이트";
+    if(b){b.classList.toggle("light",!dark);const k=b.querySelector(".tt-knob");if(k)k.textContent=dark?"🌙":"☀️";}
     // image-node labels sit on the canvas, so re-tint them for the new background
     if(typeof nodes!=="undefined")nodes.forEach(n=>{if(n.shape==="image"&&n.textEl)drawShape(n);});
   }
