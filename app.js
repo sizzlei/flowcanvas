@@ -302,7 +302,7 @@
         {label:"노드 추가",sub:shapes.map(s=>({label:s[0],action:()=>{const n=addNode(s[1],p.x,p.y);selectNode(n);}}))},
         {label:"아이콘 패널 열기/닫기",action:toggleIconPanel},
         {label:"화면 맞춤",action:fitView},
-        {label:"배경색 직접…",action:()=>document.getElementById("bgPick").click()}];
+        {label:"배경 다크/라이트",action:toggleBg}];
     }
     openCtx(cx,cy,items);
   }
@@ -517,9 +517,12 @@
     styleEdge(e);
     if(e.pulseEl)e.pulseEl.setAttribute("d",d);
     if(e.label){
-      e.textEl.setAttribute("x",mx);e.textEl.setAttribute("y",my-6);e.textEl.textContent=e.label;
-      e.bgEl.setAttribute("x",mx-e.label.length*3.7-4);e.bgEl.setAttribute("y",my-18);
-      e.bgEl.setAttribute("width",e.label.length*7.4+8);e.bgEl.setAttribute("height",16);
+      const cy=my-8, h=20, tw=measure(e.label)*0.86, bw=tw+18;   // padded, rounded label chip
+      e.textEl.setAttribute("x",mx);e.textEl.setAttribute("y",cy);
+      e.textEl.setAttribute("dominant-baseline","central");e.textEl.textContent=e.label;
+      e.bgEl.setAttribute("x",mx-bw/2);e.bgEl.setAttribute("y",cy-h/2);
+      e.bgEl.setAttribute("width",bw);e.bgEl.setAttribute("height",h);
+      e.bgEl.setAttribute("rx",8);e.bgEl.setAttribute("ry",8);
       e.bgEl.style.display="";e.textEl.style.display="";
     }else{e.bgEl.style.display="none";e.textEl.style.display="none";}
     drawOrderBadge(e);
@@ -1099,17 +1102,19 @@
   }
   function luminance(hex){const n=parseInt(hex.slice(1),16);
     return (0.299*((n>>16)&255)+0.587*((n>>8)&255)+0.114*(n&255))/255;}
+  const BG_DARK="#0d0b13", BG_LIGHT="#ffffff";
   function applyBg(hex){
     bgColor=hex;
     const dark=luminance(hex)<0.5;
     const dot=mixColor(hex,dark?0.20:0.16,dark?255:0); // contrasting grid dots
     canvasWrap.style.background=
       "radial-gradient(circle at 1px 1px, "+dot+" 1px, transparent 0) 0 0/22px 22px, "+hex;
-    const el=document.getElementById("bgPick");
-    if(el&&el.value.toLowerCase()!==hex.toLowerCase())el.value=hex;
+    const b=document.getElementById("bgBtn");
+    if(b)b.textContent=dark?"🌙 다크":"☀️ 라이트";
     // image-node labels sit on the canvas, so re-tint them for the new background
     if(typeof nodes!=="undefined")nodes.forEach(n=>{if(n.shape==="image"&&n.textEl)drawShape(n);});
   }
+  function toggleBg(){applyBg(luminance(bgColor)<0.5?BG_LIGHT:BG_DARK);sync();}
 
   // ---------- curve toggle ----------
   function updateCurveBtn(){const b=document.getElementById("curveBtn");if(b)b.classList.toggle("on",edgeCurve);}
@@ -1486,7 +1491,7 @@
   document.getElementById("colorPick").addEventListener("input",e=>applyColor(e.target.value));
   document.getElementById("strokePick").addEventListener("input",e=>applyStroke(e.target.value));
   document.getElementById("groupColorPick").addEventListener("input",e=>applyGroupColor(e.target.value));
-  document.getElementById("bgPick").addEventListener("input",e=>{applyBg(e.target.value);sync();});
+  document.getElementById("bgBtn").addEventListener("click",toggleBg);
   document.getElementById("delBtn").addEventListener("click",deleteSelected);
   document.getElementById("fitBtn").addEventListener("click",fitView);
   document.getElementById("zoomIn").addEventListener("click",()=>zoomBy(0.8));
