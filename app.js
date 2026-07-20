@@ -8,24 +8,102 @@
  *   4. selection     : 다중 노드 + 단일 엣지 선택
  *   5. interactions  : 노드 드래그(그룹 이동), 핸들 드래그 연결, 마퀴 선택
  *   6. CRUD          : addNode/addEdge/deleteSelected/applyColor
- *   7. mermaid code  : 편집 상태 → Mermaid 코드 생성(genCode)
- *   8. PNG export    : 현재 화면을 PNG로 내보내기
- *   9. serialize     : 다이어그램 직렬화 + 저장/불러오기
- *  10. history       : 실행취소/다시실행 + localStorage 자동저장
- *  11. shortcuts     : 설정 가능한 단축키(설정은 JSON으로 영속화)
- *  12. startup       : 저장본 복원 또는 예시 시드
+ *   7. 자동 엣지 분리 : 같은 노드쌍의 형제/양방향 엣지를 벌려서 그림
+ *   8. animation     : 흐름선 comet 펄스 재생(order 순서 + 반복)
+ *   9. tags          : 흐름선 태그별 표시/숨김 필터
+ *  10. PNG export    : 현재 화면을 PNG로 내보내기
+ *  11. serialize     : 다이어그램 직렬화 + 저장/불러오기 (앱 고유 JSON)
+ *  12. history       : 실행취소/다시실행 + localStorage 자동저장
+ *  13. shortcuts     : 설정 가능한 단축키(설정은 JSON으로 영속화)
+ *  14. startup       : 저장본 복원 또는 예시 시드
  *
  * 저장 키: flowcanvas.diagram(작업본), flowcanvas.settings(단축키)
  */
 (function(){
   "use strict";
+
+  // ---------- YAML (compact, self-contained — the app stays dependency-free) ----------
+  // Emits a readable YAML subset for our data and parses it back. Legacy JSON auto-detected on load.
+  const Y=(function(){
+    const IND="  ";
+    function needQuote(s){
+      if(s==="")return true;
+      if(/^\s|\s$/.test(s))return true;                         // leading/trailing space
+      if(/^(true|false|null|~|-?\d+(\.\d+)?)$/i.test(s))return true; // ambiguous with non-string
+      if(/^[-?:,\[\]{}#&*!|>'"%@`]/.test(s))return true;        // starts with an indicator
+      if(s.indexOf(":")>=0||s.indexOf(" #")>=0||/[\n\t]/.test(s))return true;
+      return false;
+    }
+    function qstr(s){return '"'+s.replace(/\\/g,"\\\\").replace(/"/g,'\\"').replace(/\n/g,"\\n").replace(/\t/g,"\\t")+'"';}
+    function scalar(v){
+      if(v===null||v===undefined)return "null";
+      if(typeof v==="boolean")return v?"true":"false";
+      if(typeof v==="number")return String(v);
+      const s=String(v);return needQuote(s)?qstr(s):s;
+    }
+    const isMap=v=>v&&typeof v==="object"&&!Array.isArray(v);
+    function dumpMap(o,ind){
+      const pad=IND.repeat(ind),keys=Object.keys(o);
+      if(!keys.length)return pad+"{}\n";
+      let out="";
+      for(const k of keys){const v=o[k];
+        if(Array.isArray(v))out+= v.length? pad+k+":\n"+dumpSeq(v,ind+1) : pad+k+": []\n";
+        else if(isMap(v))out+= Object.keys(v).length? pad+k+":\n"+dumpMap(v,ind+1) : pad+k+": {}\n";
+        else out+=pad+k+": "+scalar(v)+"\n";}
+      return out;
+    }
+    function dumpSeq(a,ind){
+      const pad=IND.repeat(ind);let out="";
+      for(const v of a){
+        if(Array.isArray(v))out+= v.length? pad+"-\n"+dumpSeq(v,ind+1) : pad+"- []\n";
+        else if(isMap(v))out+= Object.keys(v).length? pad+"-\n"+dumpMap(v,ind+1) : pad+"- {}\n";
+        else out+=pad+"- "+scalar(v)+"\n";}
+      return out;
+    }
+    function unq(s){return s.slice(1,-1).replace(/\\(["\\nt])/g,(m,c)=>c==="n"?"\n":c==="t"?"\t":c);}
+    function scal(s){
+      s=s.trim();
+      if(s.length>=2&&s[0]==='"'&&s[s.length-1]==='"')return unq(s);
+      if(s==="true")return true;if(s==="false")return false;if(s==="null"||s==="~")return null;
+      if(/^-?\d+$/.test(s))return parseInt(s,10);
+      if(/^-?\d*\.\d+$/.test(s))return parseFloat(s);
+      return s;
+    }
+    function load(text){
+      if(text==null)return null;
+      const t=String(text).trim();if(!t)return null;
+      if(t[0]==="{"||t[0]==="[")return JSON.parse(t);           // legacy JSON support
+      const lines=String(text).replace(/\r/g,"").split("\n").filter(l=>l.trim().length&&!/^\s*#/.test(l));
+      if(!lines.length)return null;
+      let i=0;const lead=l=>l.match(/^ */)[0].length;
+      function block(ind){const c=lines[i].slice(lead(lines[i]));
+        return (c==="-"||c.slice(0,2)==="- ")?seq(ind):map(ind);}
+      function map(ind){const o={};
+        while(i<lines.length){const ln=lines[i],d=lead(ln);if(d!==ind)break;
+          const c=ln.slice(d);if(c==="-"||c.slice(0,2)==="- ")break;
+          const p=c.indexOf(":"),key=c.slice(0,p).trim(),rest=c.slice(p+1).trim();i++;
+          if(rest==="")o[key]=(i<lines.length&&lead(lines[i])>ind)?block(lead(lines[i])):null;
+          else if(rest==="[]")o[key]=[];else if(rest==="{}")o[key]={};else o[key]=scal(rest);}
+        return o;}
+      function seq(ind){const a=[];
+        while(i<lines.length){const ln=lines[i],d=lead(ln);if(d!==ind)break;
+          const c=ln.slice(d);if(!(c==="-"||c.slice(0,2)==="- "))break;
+          const rest=c==="-"?"":c.slice(2).trim();i++;
+          if(rest==="")a.push((i<lines.length&&lead(lines[i])>ind)?block(lead(lines[i])):null);
+          else if(rest==="[]")a.push([]);else if(rest==="{}")a.push({});else a.push(scal(rest));}
+        return a;}
+      return block(lead(lines[0]));
+    }
+    function dump(o){return isMap(o)?dumpMap(o,0):Array.isArray(o)?dumpSeq(o,0):scalar(o)+"\n";}
+    return {dump,load};
+  })();
+
   const SVGNS="http://www.w3.org/2000/svg";
   const svg=document.getElementById("svg");
   const gNodes=document.getElementById("nodes");
   const gEdges=document.getElementById("edges");
   const tempEdge=document.getElementById("tempEdge");
   const emptyHint=document.getElementById("emptyHint");
-  const codeEl=document.getElementById("code");
   const canvasWrap=document.getElementById("canvasWrap");
 
   // ---------- view (pan / zoom via viewBox) ----------
@@ -82,17 +160,17 @@
   }
   let spaceDown=false, panning=null;
 
-  const DEFAULT_FILL="#2f2748", DEFAULT_STROKE="#8b5cf6";
+  const DEFAULT_FILL="#2f2748", DEFAULT_STROKE="#8b5cf6", DEFAULT_EDGE="#9c8fce";
   let nodes=[]; // {id,label,shape,x,y,w,h,fill,stroke,bstyle,el,shapeEl,textEl,handles[],decor[]}
-  let edges=[]; // {id,from,to,label,line,head,el,pathEl,hitEl,textEl,bgEl}
+  let edges=[]; // {id,from,to,label,line,head,order,tags,el,pathEl,hitEl,textEl,bgEl}
   let subgraphs=[]; // {id,title,nodes:Set,el,rectEl,titleEl}
   let nid=0, eid=0, gid=0;
   let connecting=null; // {source, }
   let edgeCurve=false;
   let bgColor="#0d0b13"; // canvas background color
+  let animColor="#e879f9"; // flow-animation (pulse) color, shared by all edges
   let edgeDefaults={line:"solid",head:"arrow"}; // style applied to new edges
   const NODE_W=120, NODE_H=54;
-  const dirEl=document.getElementById("dir");
   // layer for subgraph boxes, drawn behind edges/nodes
   const gGroups=document.createElementNS(SVGNS,"g");gGroups.setAttribute("id","groups");
   svg.insertBefore(gGroups,gEdges);
@@ -173,7 +251,7 @@
       if(!selNodes.has(node.id))selectNode(node);
       items=[
         {label:"이름 변경",action:()=>{if(selNodes.size===1){const n=nodes.find(x=>selNodes.has(x.id));
-          openInline(cx,cy,n.label,v=>{n.label=v.trim()||n.label;refreshNode(n);genCode();});}
+          openInline(cx,cy,n.label,v=>{n.label=v.trim()||n.label;refreshNode(n);sync();});}
           else toast("단일 노드를 선택하세요");}},
         {label:"채움 색",swatches:FILL_SWATCHES,onPick:applyColor},
         {label:"채움 색 직접…",action:()=>document.getElementById("colorPick").click()},
@@ -189,7 +267,7 @@
       const e=edges.find(x=>x.id===+edgeEl.dataset.id);if(e)selectEdge(e);
       items=[
         {label:"라벨 편집",action:()=>{if(e)openInline(cx,cy,e.label,
-          v=>{e.label=v.trim();drawEdge(e);genCode();});}},
+          v=>{e.label=v.trim();drawEdge(e);sync();});}},
         {label:"선 스타일",sub:[
           {label:"─ 실선",action:()=>applyEdgeStyle("line","solid")},
           {label:"┈ 점선",action:()=>applyEdgeStyle("line","dotted")},
@@ -200,6 +278,10 @@
           {label:"○ 원",action:()=>applyEdgeStyle("head","circle")},
           {label:"✕ X",action:()=>applyEdgeStyle("head","cross")},
           {label:"↔ 양방향",action:()=>applyEdgeStyle("head","bi")}]},
+        {label:"애니메이션 순서…",action:()=>{if(e)askText("애니메이션 순서 (숫자, 작을수록 먼저 · 같은 숫자는 동시)",String(e.order||1),
+          v=>{const num=parseInt(v,10);e.order=isNaN(num)?1:num;edges.forEach(drawEdge);sync();});}},
+        {label:"태그 지정…",action:()=>{if(e)askText("태그 (쉼표로 구분)",(e.tags||[]).join(", "),
+          v=>{e.tags=String(v||"").split(",").map(s=>s.trim()).filter(Boolean);sync();applyTagFilter();});}},
         {sep:true},
         {label:"삭제",danger:true,action:deleteSelected}];
     }else if(groupEl){
@@ -218,6 +300,7 @@
         ["원","circle"],["육각형","hexagon"],["원통(DB)","cylinder"],["서브루틴","subroutine"]];
       items=[
         {label:"노드 추가",sub:shapes.map(s=>({label:s[0],action:()=>{const n=addNode(s[1],p.x,p.y);selectNode(n);}}))},
+        {label:"아이콘 패널 열기/닫기",action:toggleIconPanel},
         {label:"화면 맞춤",action:fitView},
         {label:"배경색 직접…",action:()=>document.getElementById("bgPick").click()}];
     }
@@ -285,7 +368,25 @@
       ts.setAttribute("x",0);ts.setAttribute("y",startY+i*LINE_H);
       ts.textContent=ln;t.appendChild(ts);});
   }
+  const XLINK="http://www.w3.org/1999/xlink";
+  const IMG_SIZE=72;
   function drawShape(n){
+    if(n.shape==="image"){                       // image node: invisible rect (select/drag) + <image> + label below
+      const w=IMG_SIZE,h=IMG_SIZE;n.w=w;n.h=h;const s=n.shapeEl,hw=w/2,hh=h/2;
+      s.setAttribute("x",-hw);s.setAttribute("y",-hh);s.setAttribute("width",w);s.setAttribute("height",h);
+      s.setAttribute("rx",10);s.setAttribute("ry",10);s.setAttribute("fill","transparent");
+      s.setAttribute("stroke","transparent");     // selection CSS overrides this with !important
+      if(n.imgEl){n.imgEl.setAttribute("x",-hw+2);n.imgEl.setAttribute("y",-hh+2);
+        n.imgEl.setAttribute("width",w-4);n.imgEl.setAttribute("height",h-4);
+        n.imgEl.setAttribute("preserveAspectRatio","xMidYMid meet");
+        n.imgEl.setAttributeNS(XLINK,"href",n.img||"");n.imgEl.setAttribute("href",n.img||"");}
+      const t=n.textEl;while(t.firstChild)t.removeChild(t.firstChild);
+      if(n.label){const ts=document.createElementNS(SVGNS,"tspan");
+        ts.setAttribute("x",0);ts.setAttribute("y",hh+15);ts.textContent=n.label;t.appendChild(ts);}
+      const pos=[[0,-hh],[hw,0],[0,hh],[-hw,0]];
+      n.handles.forEach((hd,i)=>{hd.setAttribute("cx",pos[i][0]);hd.setAttribute("cy",pos[i][1]);hd.setAttribute("r",6);});
+      return;
+    }
     const lines=wrapLabel(n.label);
     const {w,h}=sizeFor(n,lines);n.w=w;n.h=h;const s=n.shapeEl;
     const hw=w/2,hh=h/2;
@@ -335,6 +436,8 @@
     const s=makeShapeEl(n.shape);s.setAttribute("class","shape");
     const t=document.createElementNS(SVGNS,"text");t.setAttribute("class","lbl-t");
     g.appendChild(s);
+    if(n.shape==="image"){const im=document.createElementNS(SVGNS,"image");
+      im.setAttribute("class","nimg");g.appendChild(im);n.imgEl=im;}
     // decor: subroutine gets 2 side lines, cylinder gets a top rim ellipse
     n.decor=[];
     if(n.shape==="subroutine"){for(let i=0;i<2;i++){const l=document.createElementNS(SVGNS,"line");
@@ -375,11 +478,26 @@
     for(const c of cand){const d=(c[0]-tx)*(c[0]-tx)+(c[1]-ty)*(c[1]-ty);if(d<bd){bd=d;best=c;}}
     return {x:best[0],y:best[1]};
   }
+  // all edges connecting the same unordered node pair, in a stable order (by id)
+  function edgeSiblings(e){return edges.filter(x=>(x.from===e.from&&x.to===e.to)||(x.from===e.to&&x.to===e.from))
+    .sort((p,q)=>p.id-q.id);}
   function drawEdge(e){
     const a=nodes.find(n=>n.id===e.from),b=nodes.find(n=>n.id===e.to);if(!a||!b)return;
     const p1=anchorPoint(a,b.x,b.y),p2=anchorPoint(b,a.x,a.y);
+    // auto-separate parallel/bidirectional edges: bow siblings apart so lines+labels don't overlap
+    const sibs=edgeSiblings(e),tot=sibs.length,idx=sibs.indexOf(e);
+    const bow=tot>1?(idx-(tot-1)/2)*26:0;
     let mx=(p1.x+p2.x)/2,my=(p1.y+p2.y)/2,d;
-    if(edgeCurve){
+    if(bow!==0){
+      // perpendicular measured on a canonical axis (low id → high id) so opposite edges split cleanly
+      const lo=Math.min(e.from,e.to),hi=Math.max(e.from,e.to);
+      const A=nodes.find(n=>n.id===lo),B=nodes.find(n=>n.id===hi);
+      const dx=B.x-A.x,dy=B.y-A.y,len=Math.hypot(dx,dy)||1;
+      const px=-dy/len,py=dx/len;
+      const cx=mx+px*bow*2,cy=my+py*bow*2;
+      d=`M ${p1.x} ${p1.y} Q ${cx} ${cy} ${p2.x} ${p2.y}`;
+      mx=0.25*p1.x+0.5*cx+0.25*p2.x; my=0.25*p1.y+0.5*cy+0.25*p2.y;
+    }else if(edgeCurve){
       const dx=p2.x-p1.x,dy=p2.y-p1.y,len=Math.hypot(dx,dy)||1;
       const off=Math.min(70,len*0.22);
       const cx=mx-dy/len*off, cy=my+dx/len*off;
@@ -390,12 +508,27 @@
     }
     e.pathEl.setAttribute("d",d);e.hitEl.setAttribute("d",d);
     styleEdge(e);
+    if(e.pulseEl)e.pulseEl.setAttribute("d",d);
     if(e.label){
       e.textEl.setAttribute("x",mx);e.textEl.setAttribute("y",my-6);e.textEl.textContent=e.label;
       e.bgEl.setAttribute("x",mx-e.label.length*3.7-4);e.bgEl.setAttribute("y",my-18);
       e.bgEl.setAttribute("width",e.label.length*7.4+8);e.bgEl.setAttribute("height",16);
       e.bgEl.style.display="";e.textEl.style.display="";
     }else{e.bgEl.style.display="none";e.textEl.style.display="none";}
+    drawOrderBadge(e);
+  }
+  // numbered badge near the edge start — kept positioned but hidden (CSS opacity);
+  // only flashed briefly (then fades out) when the order is (re)assigned
+  function drawOrderBadge(e){
+    let pt={x:0,y:0};
+    try{const L=e.pathEl.getTotalLength();pt=e.pathEl.getPointAtLength(L*0.22);}catch(_){}
+    e.badgeEl.setAttribute("cx",pt.x);e.badgeEl.setAttribute("cy",pt.y);e.badgeEl.setAttribute("r",9);
+    e.badgeTx.setAttribute("x",pt.x);e.badgeTx.setAttribute("y",pt.y);e.badgeTx.textContent=String(e.order||1);
+  }
+  // toggle order-number badges on all edges (top-bar toggle)
+  function toggleOrderBadges(){
+    const on=document.getElementById("app").classList.toggle("show-order");
+    const b=document.getElementById("orderBtn");if(b)b.classList.toggle("on",on);
   }
   function renderEdge(e){
     const g=document.createElementNS(SVGNS,"g");g.setAttribute("class","edge");g.dataset.id=e.id;
@@ -403,12 +536,14 @@
     const hit=document.createElementNS(SVGNS,"path");hit.setAttribute("class","hit");
     const bg=document.createElementNS(SVGNS,"rect");bg.setAttribute("fill","#120f1c");bg.setAttribute("rx",3);
     const text=document.createElementNS(SVGNS,"text");
-    g.appendChild(path);g.appendChild(bg);g.appendChild(text);g.appendChild(hit);
+    const badge=document.createElementNS(SVGNS,"circle");badge.setAttribute("class","order-badge");
+    const badgeTx=document.createElementNS(SVGNS,"text");badgeTx.setAttribute("class","order-badge-t");
+    g.appendChild(path);g.appendChild(bg);g.appendChild(text);g.appendChild(badge);g.appendChild(badgeTx);g.appendChild(hit);
     gEdges.appendChild(g);
-    e.el=g;e.pathEl=path;e.hitEl=hit;e.textEl=text;e.bgEl=bg;
+    e.el=g;e.pathEl=path;e.hitEl=hit;e.textEl=text;e.bgEl=bg;e.badgeEl=badge;e.badgeTx=badgeTx;
     hit.addEventListener("click",ev=>{ev.stopPropagation();selectEdge(e);});
     hit.addEventListener("dblclick",ev=>{ev.stopPropagation();
-      openInline(ev.clientX,ev.clientY,e.label,v=>{e.label=v.trim();drawEdge(e);genCode();});});
+      openInline(ev.clientX,ev.clientY,e.label,v=>{e.label=v.trim();drawEdge(e);sync();});});
     drawEdge(e);
   }
 
@@ -462,10 +597,10 @@
       group.forEach(g=>{g.n.x=g.x0+dx;g.n.y=g.y0+dy;position(g.n);});
       edges.forEach(drawEdge);renderGroups();
     });
-    window.addEventListener("mouseup",()=>{if(dragging){dragging=false;n.el.style.cursor="grab";if(moved)genCode();}});
+    window.addEventListener("mouseup",()=>{if(dragging){dragging=false;n.el.style.cursor="grab";if(moved)sync();}});
     n.el.addEventListener("dblclick",ev=>{ev.stopPropagation();
       openInline(ev.clientX,ev.clientY,n.label,v=>{
-        n.label=v.trim()||n.label;refreshNode(n);genCode();});});
+        n.label=v.trim()||n.label;refreshNode(n);sync();});});
     // handles = drag to connect
     n.handles.forEach(hd=>{
       hd.addEventListener("mousedown",ev=>{if(ev.button!==0)return;ev.stopPropagation();startConnect(n,ev);});
@@ -508,19 +643,29 @@
     const n={id:++nid,label:label||("노드"+nid),shape:shape||"round",
       fill:DEFAULT_FILL,stroke:DEFAULT_STROKE,bstyle:"solid",
       x:x??(160+Math.random()*300),y:y??(120+Math.random()*240),w:NODE_W,h:NODE_H,handles:[]};
-    nodes.push(n);renderNode(n);updateEmpty();genCode();return n;
+    nodes.push(n);renderNode(n);updateEmpty();sync();return n;
+  }
+  // image node: an <image> icon with an optional label beneath (used for pasted images / imported AWS icons)
+  function addImageNode(img,x,y,label){
+    const n={id:++nid,label:label||"",shape:"image",img:img,
+      fill:DEFAULT_FILL,stroke:DEFAULT_STROKE,bstyle:"solid",
+      x:x??(view.x+view.w/2),y:y??(view.y+view.h/2),w:IMG_SIZE,h:IMG_SIZE,handles:[]};
+    nodes.push(n);renderNode(n);updateEmpty();sync();return n;
   }
   function addEdge(from,to,label,style){
     if(edges.some(e=>e.from===from&&e.to===to)){toast("이미 연결됨");return;}
-    const e={id:++eid,from,to,label:label||"",
+    const e={id:++eid,from,to,label:label||"",order:1,tags:[],
       line:(style&&style.line)||edgeDefaults.line,head:(style&&style.head)||edgeDefaults.head};
-    edges.push(e);renderEdge(e);genCode();
+    edges.push(e);renderEdge(e);
+    edgeSiblings(e).forEach(drawEdge);              // re-bow existing sibling so both separate
+    sync();
   }
   function deleteSelected(){
+    stopAnim();
     if(selEdge!=null){                               // delete the selected edge
       const e=edges.find(x=>x.id===selEdge);
       if(e){e.el.remove();edges=edges.filter(x=>x.id!==e.id);}
-      selEdge=null;updateEmpty();genCode();return;
+      selEdge=null;edges.forEach(drawEdge);updateEmpty();sync();return;
     }
     if(!selNodes.size){toast("삭제할 대상을 선택하세요");return;}
     const ids=new Set(selNodes);                     // delete all selected nodes + their edges
@@ -529,29 +674,32 @@
     nodes.filter(n=>ids.has(n.id)).forEach(n=>n.el.remove());
     nodes=nodes.filter(n=>!ids.has(n.id));
     subgraphs.forEach(sg=>ids.forEach(id=>sg.nodes.delete(id)));
-    selNodes.clear();updateEmpty();renderGroups();genCode();
+    selNodes.clear();edges.forEach(drawEdge);updateEmpty();renderGroups();sync();
   }
   function applyColor(hex){                           // recolor every selected node's fill
     if(!selNodes.size){toast("색을 바꿀 노드를 먼저 선택하세요");return;}
     selNodes.forEach(id=>{const n=nodes.find(x=>x.id===id);
       if(n){n.fill=hex;n.shapeEl.setAttribute("fill",hex);}});
-    genCode();
+    sync();
   }
   function applyStroke(hex){                          // recolor every selected node's border
     if(!selNodes.size){toast("테두리를 바꿀 노드를 먼저 선택하세요");return;}
     selNodes.forEach(id=>{const n=nodes.find(x=>x.id===id);if(n){n.stroke=hex;drawShape(n);}});
-    genCode();
+    sync();
   }
   function applyBstyle(style){                        // border style: solid/dashed/thick
     if(!selNodes.size){toast("테두리를 바꿀 노드를 먼저 선택하세요");return;}
     selNodes.forEach(id=>{const n=nodes.find(x=>x.id===id);if(n){n.bstyle=style;drawShape(n);}});
-    genCode();
+    sync();
   }
   // apply line/head to the selected edge (and remember as default for new edges)
   function applyEdgeStyle(part,val){
     edgeDefaults[part]=val;
-    if(selEdge!=null){const e=edges.find(x=>x.id===selEdge);if(e){e[part]=val;drawEdge(e);genCode();}}
+    if(selEdge!=null){const e=edges.find(x=>x.id===selEdge);if(e){e[part]=val;drawEdge(e);sync();}}
   }
+  // global animation (pulse) color — applies to every edge's flow animation
+  function applyAnimColor(hex){animColor=hex;
+    if(animState)edges.forEach(e=>{if(e.pulseEl)e.pulseEl.style.stroke=animColor;});sync();}
 
   // ---------- subgraphs ----------
   function renderGroups(){
@@ -583,7 +731,7 @@
     const ids=[...selNodes];
     subgraphs.forEach(sg=>ids.forEach(id=>sg.nodes.delete(id))); // a node lives in one group
     rebuildGroup({id:++gid,title:"그룹 "+gid,nodes:ids,color:"#8b5cf6"});
-    renderGroups();genCode();toast("그룹으로 묶음");
+    renderGroups();sync();toast("그룹으로 묶음");
   }
   function ungroup(){
     if(!selNodes.size){toast("해제할 그룹의 노드를 선택하세요");return;}
@@ -591,78 +739,30 @@
     subgraphs=subgraphs.filter(sg=>{
       const hit=[...selNodes].some(id=>sg.nodes.has(id));
       if(hit){sg.el.remove();removed++;return false;}return true;});
-    if(removed){genCode();toast("그룹 해제");}else toast("선택 항목이 속한 그룹이 없습니다");
+    if(removed){sync();toast("그룹 해제");}else toast("선택 항목이 속한 그룹이 없습니다");
   }
   // groups that contain any currently selected node
   function selectedGroups(){return subgraphs.filter(sg=>[...selNodes].some(id=>sg.nodes.has(id)));}
   function applyGroupColor(hex){
     const gs=selectedGroups();
     if(!gs.length){toast("색을 바꿀 그룹의 노드를 선택하세요");return;}
-    gs.forEach(sg=>sg.color=hex);renderGroups();genCode();
+    gs.forEach(sg=>sg.color=hex);renderGroups();sync();
   }
   function updateEmpty(){emptyHint.style.display=nodes.length?"none":"";}
 
-  // ---------- mermaid code ----------
-  const wrap={rect:['[',']'],round:['(',')'],stadium:['([','])'],diamond:['{','}'],
-    circle:['((','))'],hexagon:['{{','}}'],cylinder:['[(',')]'],subroutine:['[[',']]']};
-  function san(t){return '"'+String(t==null?"":t).replace(/"/g,"'").replace(/\n/g," ")+'"';}
-  function nodeDef(n){const w=wrap[n.shape]||wrap.round;return "N"+n.id+w[0]+san(n.label)+w[1];}
-  // connector token for a given edge line + head
-  const CONN={
-    solid:{arrow:"-->",open:"---",circle:"--o",cross:"--x",bi:"<-->"},
-    dotted:{arrow:"-.->",open:"-.-",circle:"-.-o",cross:"-.-x",bi:"<-.->"},
-    thick:{arrow:"==>",open:"===",circle:"==o",cross:"==x",bi:"<==>"}};
-  function edgeConn(e){return (CONN[e.line]&&CONN[e.line][e.head])||"-->";}
-  // classDef signature for a node's custom style (null = default, no style needed)
-  function nodeStyleSig(n){
-    const fill=n.fill||DEFAULT_FILL,stroke=n.stroke||DEFAULT_STROKE,b=n.bstyle||"solid";
-    if(fill===DEFAULT_FILL&&stroke===DEFAULT_STROKE&&b==="solid")return null;
-    let s="fill:"+fill+",stroke:"+stroke+",stroke-width:"+(b==="thick"?"3px":"1px")+",color:#f2ecff";
-    if(b==="dashed")s+=",stroke-dasharray:5 3";
-    return s;
-  }
-  function genCode(){
-    let out="";
-    if(edgeCurve)out+="%%{init: {'flowchart': {'curve': 'basis'}}}%%\n";
-    out+="flowchart "+dirEl.value+"\n";
-    // subgraphs first (their member node definitions live inside the block)
-    const inGroup=new Set();
-    subgraphs.forEach(sg=>{
-      const mem=[...sg.nodes].filter(id=>nodes.some(n=>n.id===id));
-      if(!mem.length)return;
-      out+="    subgraph SG"+sg.id+"["+san(sg.title)+"]\n";
-      mem.forEach(id=>{inGroup.add(id);out+="        "+nodeDef(nodes.find(n=>n.id===id))+"\n";});
-      out+="    end\n";
-    });
-    // free nodes (not in any subgraph)
-    nodes.forEach(n=>{if(!inGroup.has(n.id))out+="    "+nodeDef(n)+"\n";});
-    // edges
-    edges.forEach(e=>{const c=edgeConn(e);
-      out+= e.label ? "    N"+e.from+" "+c+"|"+san(e.label)+"| N"+e.to+"\n"
-                    : "    N"+e.from+" "+c+" N"+e.to+"\n";});
-    // classDef + class (group nodes that share the same custom style → reusable class)
-    const sigMap=new Map();let ci=0;
-    nodes.forEach(n=>{const sig=nodeStyleSig(n);if(!sig)return;
-      if(!sigMap.has(sig))sigMap.set(sig,{cls:"fm"+(++ci),ids:[]});
-      sigMap.get(sig).ids.push("N"+n.id);});
-    if(sigMap.size){out+="\n";
-      sigMap.forEach((v,sig)=>{out+="    classDef "+v.cls+" "+sig+"\n";});
-      sigMap.forEach(v=>{out+="    class "+v.ids.join(",")+" "+v.cls+"\n";});}
-    // subgraph box colors → style SGx
-    subgraphs.forEach(sg=>{
-      if(![...sg.nodes].some(id=>nodes.some(n=>n.id===id)))return;
-      const col=sg.color||"#8b5cf6";
-      out+="    style SG"+sg.id+" fill:"+col+"1f,stroke:"+col+",stroke-width:1.5px\n";});
-    codeEl.textContent=out;
+  // ---------- persistence trigger ----------
+  // (was Mermaid code generation; the app is now a standalone editor with its own JSON format)
+  // called after any change to refresh the tag bar and record history/autosave
+  function sync(){
+    if(typeof renderTagBar==="function"){if(activeTag)applyTagFilter();else renderTagBar();}
     commit();
-    return out;
   }
 
   // ---------- edge styling + markers ----------
   // set stroke width/dash + start/end markers from e.line and e.head
   function styleEdge(e){
     const p=e.pathEl;
-    p.style.stroke="#9c8fce";
+    p.style.stroke=DEFAULT_EDGE;
     p.style.strokeWidth=(e.line==="thick"?4:2);
     p.style.strokeDasharray=(e.line==="dotted"?"5 4":"");
     const endMap={arrow:"arrow",open:"",circle:"circleEnd",cross:"crossEnd",bi:"arrow"};
@@ -672,7 +772,7 @@
   }
   function buildDefs(){
     const defs=document.createElementNS(SVGNS,"defs");
-    const COL="#9c8fce";
+    const COL=DEFAULT_EDGE;
     const mk=(id,refX,orient,child)=>{
       const m=document.createElementNS(SVGNS,"marker");
       m.setAttribute("id",id);m.setAttribute("viewBox","0 0 10 10");
@@ -748,6 +848,8 @@
       el.setAttribute("font-size","13");el.setAttribute("font-weight","600");
       el.setAttribute("font-family","sans-serif");});
     root.querySelectorAll(".sel").forEach(el=>el.classList.remove("sel"));
+    // UI-only overlays (animation pulse, order badges) don't belong in the export
+    root.querySelectorAll(".pulse,.order-badge,.order-badge-t").forEach(el=>el.remove());
   }
 
   // ---------- inline label editor (tooltip box) ----------
@@ -892,30 +994,32 @@
   });
 
   // ---------- serialize / load ----------
-  function clearScene(){nodes.forEach(n=>n.el.remove());edges.forEach(e=>e.el.remove());
+  function clearScene(){stopAnim();nodes.forEach(n=>n.el.remove());edges.forEach(e=>e.el.remove());
     subgraphs.forEach(sg=>sg.el.remove());
     nodes=[];edges=[];subgraphs=[];selNodes.clear();selEdge=null;}
-  function serialize(){return {v:2,dir:dirEl.value,edgeCurve,bgColor,nid,eid,gid,
-    nodes:nodes.map(n=>({id:n.id,label:n.label,shape:n.shape,x:Math.round(n.x),y:Math.round(n.y),
-      fill:n.fill,stroke:n.stroke,bstyle:n.bstyle})),
-    edges:edges.map(e=>({id:e.id,from:e.from,to:e.to,label:e.label,line:e.line,head:e.head})),
+  function serialize(){return {v:3,edgeCurve,bgColor,animColor,nid,eid,gid,
+    nodes:nodes.map(n=>{const o={id:n.id,label:n.label,shape:n.shape,x:Math.round(n.x),y:Math.round(n.y),
+      fill:n.fill,stroke:n.stroke,bstyle:n.bstyle};if(n.shape==="image")o.img=n.img;return o;}),
+    edges:edges.map(e=>({id:e.id,from:e.from,to:e.to,label:e.label,line:e.line,head:e.head,
+      order:e.order||1,tags:(e.tags||[]).slice()})),
     groups:subgraphs.map(sg=>({id:sg.id,title:sg.title,nodes:[...sg.nodes],color:sg.color}))};}
   function loadState(s){
-    clearScene();
+    clearScene();activeTag=null;
     nid=s.nid||0;eid=s.eid||0;gid=s.gid||0;
-    if(s.dir)dirEl.value=s.dir;
     edgeCurve=!!s.edgeCurve;updateCurveBtn();
     applyBg(s.bgColor||"#0d0b13");
-    (s.nodes||[]).forEach(d=>{const n={id:d.id,label:d.label,shape:d.shape,
+    animColor=s.animColor||"#e879f9";const ap=document.getElementById("animPick");if(ap)ap.value=animColor;
+    (s.nodes||[]).forEach(d=>{const n={id:d.id,label:d.label,shape:d.shape,img:d.img,
       fill:d.fill||DEFAULT_FILL,stroke:d.stroke||DEFAULT_STROKE,bstyle:d.bstyle||"solid",
       x:d.x,y:d.y,w:NODE_W,h:NODE_H,handles:[]};nodes.push(n);renderNode(n);});
     (s.edges||[]).forEach(d=>{const e={id:d.id,from:d.from,to:d.to,label:d.label||"",
-      line:d.line||"solid",head:d.head||"arrow"};edges.push(e);renderEdge(e);});
+      line:d.line||"solid",head:d.head||"arrow",
+      order:d.order||1,tags:d.tags||[]};edges.push(e);renderEdge(e);});
     (s.groups||[]).forEach(d=>rebuildGroup(d));
     nid=Math.max(nid,0,...nodes.map(n=>n.id));
     eid=Math.max(eid,0,...edges.map(e=>e.id));
     gid=Math.max(gid,0,...subgraphs.map(sg=>sg.id));
-    updateEmpty();renderGroups();genCode();
+    updateEmpty();renderGroups();sync();
   }
   // recreate a subgraph from serialized data
   function rebuildGroup(d){
@@ -929,7 +1033,7 @@
     subgraphs.push(sg);
   }
   function renameGroupSg(sg,x,y){
-    openInline(x,y,sg.title,v=>{sg.title=String(v==null?"":v).trim()||sg.title;renderGroups();genCode();});
+    openInline(x,y,sg.title,v=>{sg.title=String(v==null?"":v).trim()||sg.title;renderGroups();sync();});
   }
   // drag the group box to move all member nodes; double-click to rename
   function wireGroup(sg){
@@ -953,13 +1057,13 @@
       grp.forEach(g=>{g.n.x=g.x0+dx;g.n.y=g.y0+dy;position(g.n);});
       edges.forEach(drawEdge);renderGroups();
     });
-    window.addEventListener("mouseup",()=>{if(dragging){dragging=false;sg.el.style.cursor="grab";genCode();}});
+    window.addEventListener("mouseup",()=>{if(dragging){dragging=false;sg.el.style.cursor="grab";sync();}});
   }
 
   // ---------- history (undo / redo) + autosave ----------
   const LS_DIAGRAM="flowcanvas.diagram";
   let undoStack=[],redoStack=[],lastCommitted=null,restoring=false;
-  function snapshot(){return JSON.stringify(serialize());}
+  function snapshot(){return Y.dump(serialize());}
   function autosave(){try{localStorage.setItem(LS_DIAGRAM,lastCommitted||snapshot());}catch(e){}}
   function commit(){
     if(restoring)return;
@@ -968,7 +1072,7 @@
     if(lastCommitted!==null){undoStack.push(lastCommitted);if(undoStack.length>200)undoStack.shift();}
     lastCommitted=s;redoStack=[];autosave();updateUndoBtns();
   }
-  function restoreFrom(s){restoring=true;loadState(JSON.parse(s));restoring=false;
+  function restoreFrom(s){restoring=true;loadState(Y.load(s));restoring=false;
     lastCommitted=s;autosave();updateUndoBtns();}
   function undo(){if(!undoStack.length){toast("실행취소할 작업이 없습니다");return;}
     redoStack.push(lastCommitted);restoreFrom(undoStack.pop());toast("실행취소");}
@@ -999,8 +1103,279 @@
 
   // ---------- curve toggle ----------
   function updateCurveBtn(){const b=document.getElementById("curveBtn");if(b)b.classList.toggle("on",edgeCurve);}
-  function toggleCurve(){edgeCurve=!edgeCurve;updateCurveBtn();edges.forEach(drawEdge);genCode();
+  function toggleCurve(){edgeCurve=!edgeCurve;updateCurveBtn();edges.forEach(drawEdge);sync();
     toast(edgeCurve?"곡선 화살표":"직선 화살표");}
+
+  // ---------- flow animation ----------
+  // A "comet" pulse grows from the source and travels along each edge toward its arrow.
+  // Edges are grouped by `order`: same order animate together, different orders play in sequence.
+  let animState=null, animLoop=false;
+  const ANIM_STEP=1100;                        // ms per order-group
+  function ensurePulse(e){
+    if(!e.pulseEl){const p=document.createElementNS(SVGNS,"path");p.setAttribute("class","pulse");
+      p.setAttribute("d",e.pathEl.getAttribute("d"));e.el.appendChild(p);e.pulseEl=p;}
+    return e.pulseEl;
+  }
+  function clearPulses(){edges.forEach(e=>{if(e.pulseEl){e.pulseEl.remove();e.pulseEl=null;}});}
+  function drawPulse(e,u){                      // u in [0,1] over this edge's step
+    const path=e.pathEl,L=path.getTotalLength()||1,SEG=Math.max(24,L*0.35);
+    const full=u*(L+SEG),head=Math.min(L,full);let tail=Math.max(0,full-SEG);tail=Math.min(tail,L);
+    const p=ensurePulse(e);p.setAttribute("d",path.getAttribute("d"));
+    p.style.stroke=animColor;p.style.filter="drop-shadow(0 0 5px "+animColor+")";
+    p.style.strokeDasharray="0 "+tail+" "+(head-tail)+" "+(L+SEG);
+  }
+  function setPlayBtn(on){const b=document.getElementById("playBtn");
+    if(b){b.classList.toggle("on",on);b.textContent=on?"⏹ 정지":"▶ 재생";}}
+  function stopAnim(){if(animState){cancelAnimationFrame(animState.raf);animState=null;}clearPulses();setPlayBtn(false);}
+  function playAnim(){
+    stopAnim();
+    const live=edges.filter(e=>e.el.style.display!=="none");   // ignore tag-hidden edges
+    if(!live.length){toast("재생할 흐름선이 없습니다");return;}
+    const orders=[...new Set(live.map(e=>e.order||1))].sort((a,b)=>a-b);
+    const total=orders.length*ANIM_STEP,t0=performance.now();let cur=-1;
+    animState={raf:0};
+    function frame(now){
+      let el=now-t0;
+      if(animLoop)el%=total; else if(el>=total){stopAnim();return;}
+      const gi=Math.min(orders.length-1,Math.floor(el/ANIM_STEP));
+      if(gi!==cur){clearPulses();cur=gi;}
+      const u=(el-gi*ANIM_STEP)/ANIM_STEP;
+      live.filter(e=>(e.order||1)===orders[gi]).forEach(e=>drawPulse(e,u));
+      animState.raf=requestAnimationFrame(frame);
+    }
+    setPlayBtn(true);animState.raf=requestAnimationFrame(frame);
+  }
+  function togglePlay(){if(animState)stopAnim();else playAnim();}
+  function toggleLoop(){animLoop=!animLoop;
+    const b=document.getElementById("loopBtn");if(b)b.classList.toggle("on",animLoop);
+    toast(animLoop?"반복 재생 켜짐":"반복 재생 꺼짐");}
+
+  // ---------- edge tags (show / hide flow lines by tag) ----------
+  let activeTag=null;
+  function allTags(){return [...new Set(edges.flatMap(e=>e.tags||[]))].sort((a,b)=>a.localeCompare(b));}
+  function applyTagFilter(){
+    edges.forEach(e=>{const ok=!activeTag||(e.tags&&e.tags.includes(activeTag));
+      e.el.style.display=ok?"":"none";});
+    renderTagBar();
+  }
+  function renderTagBar(){
+    const bar=document.getElementById("tagBar");if(!bar)return;
+    const tags=allTags();
+    if(activeTag&&!tags.includes(activeTag))activeTag=null;
+    if(!tags.length){bar.style.display="none";bar.innerHTML="";return;}
+    bar.style.display="flex";bar.innerHTML="";
+    const mk=(label,tag)=>{const b=document.createElement("button");
+      b.className="tag-btn"+(((tag===null&&!activeTag)||activeTag===tag)?" on":"");
+      b.textContent=label;
+      b.addEventListener("click",()=>{activeTag=(tag===null)?null:(activeTag===tag?null:tag);
+        stopAnim();applyTagFilter();});
+      return b;};
+    bar.appendChild(mk("전체",null));
+    tags.forEach(t=>bar.appendChild(mk(t,t)));
+  }
+
+  // ---------- image input: paste / drop anywhere on the canvas ----------
+  function fileToNode(file,x,y){
+    if(!file||(file.type.indexOf("image")!==0&&!/\.svg$/i.test(file.name)))return;
+    const rd=new FileReader();rd.onload=()=>{const n=addImageNode(rd.result,x,y,file.name?file.name.replace(/\.[^.]+$/,""):"");selectNode(n);};
+    rd.readAsDataURL(file);
+  }
+  document.addEventListener("paste",ev=>{
+    if(isTyping(ev.target))return;
+    const items=(ev.clipboardData&&ev.clipboardData.items)||[];
+    for(const it of items){if(it.type&&it.type.indexOf("image")===0){
+      const f=it.getAsFile();if(f){ev.preventDefault();fileToNode(f);}return;}}
+  });
+  canvasWrap.addEventListener("dragover",ev=>{
+    if(ev.dataTransfer&&Array.from(ev.dataTransfer.types||[]).includes("Files"))ev.preventDefault();});
+  canvasWrap.addEventListener("drop",ev=>{
+    const files=ev.dataTransfer&&ev.dataTransfer.files;if(!files||!files.length)return;
+    const img=Array.from(files).find(f=>f.type.indexOf("image")===0||/\.svg$/i.test(f.name));
+    if(!img)return;ev.preventDefault();const p=cursorPt(ev);fileToNode(img,p.x,p.y);});
+
+  // ---------- icon library (built-in pack + imported SVG/PNG — e.g. official AWS icons) ----------
+  const LS_ICONS="flowcanvas.icons";
+  let iconList=[];      // user-imported {name, uri} (persisted in localStorage)
+  let builtinIcons=[];  // shipped with the app via aws-icons.js (window.FLOWCANVAS_ICONS)
+  const MY_CAT="내 아이콘";
+  function toDataURI(svg){return "data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(svg)));}
+  // ---- Korean search keywords (icon names are English, so index Korean aliases too) ----
+  const CAT_KO={
+    "Analytics":"분석 데이터","App-Integration":"통합 메시징 연동","Artificial-Intelligence":"인공지능 AI 머신러닝",
+    "Blockchain":"블록체인","Business-Applications":"비즈니스 업무","Cloud-Financial-Management":"비용 요금 재무 예산",
+    "Compute":"컴퓨팅 서버 연산","Containers":"컨테이너 쿠버네티스","Customer-Enablement":"고객 지원",
+    "Database":"데이터베이스 디비","Developer-Tools":"개발 도구 개발자","End-User-Computing":"데스크톱 가상데스크톱",
+    "Front-End-Web-Mobile":"프론트엔드 웹 모바일","Games":"게임","General-Icons":"일반",
+    "Internet-of-Things":"사물인터넷 아이오티","Management-Governance":"관리 거버넌스 운영 모니터링",
+    "Media-Services":"미디어 영상","Migration-Modernization":"마이그레이션 이전 현대화",
+    "Networking-Content-Delivery":"네트워크 네트워킹 콘텐츠전송","Quantum-Technologies":"양자","Satellite":"위성",
+    "Security-Identity-Compliance":"보안 인증 권한 규정 준수","Storage":"스토리지 저장 저장소",
+    "_Groups":"그룹 영역 경계","_Categories":"카테고리"};
+  const SVC_KO=[
+    [/EC2|Elastic Compute/i,"가상서버 인스턴스 컴퓨팅"],[/Lambda/i,"람다 서버리스 함수"],
+    [/Simple Storage|\bS3\b/i,"에스쓰리 스토리지 버킷 저장소"],[/Aurora/i,"오로라 데이터베이스"],
+    [/RDS|Relational Database/i,"관계형 데이터베이스"],[/DynamoDB/i,"다이나모디비 NoSQL"],
+    [/ElastiCache/i,"캐시 캐싱"],[/Redshift/i,"레드시프트 데이터웨어하우스"],
+    [/Virtual Private Cloud|VPC/i,"가상 네트워크 브이피씨"],[/CloudFront/i,"클라우드프론트 콘텐츠전송 CDN"],
+    [/Route.?53/i,"라우트53 도메인 DNS"],[/API Gateway/i,"에이피아이 게이트웨이"],
+    [/Load Balanc/i,"로드밸런서 부하분산"],[/Simple Notification|SNS/i,"알림 푸시"],
+    [/Simple Queue|SQS/i,"큐 대기열 메시지"],[/Simple Email|SES/i,"이메일 메일"],
+    [/Identity and Access|IAM/i,"권한 인증 계정 아이엠"],[/Cognito/i,"인증 로그인 사용자풀"],
+    [/Key Management|KMS/i,"키 암호화"],[/Secrets Manager/i,"시크릿 비밀"],[/WAF/i,"웹방화벽 방화벽"],
+    [/Shield/i,"디도스 보호"],[/GuardDuty/i,"위협탐지"],[/CloudWatch/i,"모니터링 로그 지표"],
+    [/CloudTrail/i,"감사 로그"],[/CloudFormation/i,"인프라 스택"],[/Elastic Kubernetes|EKS/i,"쿠버네티스 컨테이너"],
+    [/Elastic Container Service|ECS/i,"컨테이너"],[/Fargate/i,"서버리스 컨테이너"],
+    [/Container Registry|ECR/i,"컨테이너 레지스트리"],[/SageMaker/i,"머신러닝 세이지메이커"],
+    [/Bedrock/i,"생성형 인공지능"],[/Step Functions/i,"워크플로 상태머신"],[/EventBridge/i,"이벤트"],
+    [/Kinesis/i,"스트리밍 실시간"],[/Glue/i,"이티엘 데이터"],[/Athena/i,"쿼리 분석"],
+    [/EMR/i,"빅데이터 하둡 스파크"],[/QuickSight/i,"시각화 대시보드"],[/Beanstalk/i,"배포"],
+    [/CodePipeline|CodeBuild|CodeDeploy|CodeCommit|CodeCatalyst/i,"배포 파이프라인 시아이 시디"],
+    [/Amplify/i,"프론트엔드 배포"],[/Elastic File System|EFS/i,"파일 스토리지"],
+    [/Elastic Block Store|EBS/i,"블록 스토리지 볼륨 디스크"],[/Glacier/i,"아카이브 백업"],
+    [/Backup/i,"백업"],[/Snowball|Snow/i,"데이터전송"],[/Direct Connect/i,"전용선"],
+    [/Transit Gateway/i,"전송 게이트웨이"],[/Systems Manager/i,"시스템관리"],
+    [/Organizations/i,"조직 계정관리"],[/Cost Explorer|Budgets|Billing/i,"비용 예산 요금"]];
+  function kwFor(name,cat){
+    const base=cat.indexOf("Res-")===0?cat.slice(4):cat;
+    let s=name+" "+base.replace(/-/g," ")+" "+(CAT_KO[base]||"");
+    for(const kv of SVC_KO){if(kv[0].test(name))s+=" "+kv[1];}
+    return s.toLowerCase();
+  }
+  function loadBuiltinIcons(){
+    const arr=(window.FLOWCANVAS_ICONS||[]);
+    builtinIcons=arr.map(e=>{const cat=e.cat||"기타";
+      return {name:e.name,cat,uri:e.uri||toDataURI(e.svg),builtin:true,_kw:kwFor(e.name,cat)};});
+  }
+  function loadIcons(){try{const j=Y.load(localStorage.getItem(LS_ICONS));if(Array.isArray(j))iconList=j;}catch(e){}}
+  // human-readable category label
+  function catLabel(cat){
+    if(cat===MY_CAT)return "★ 내 아이콘";
+    if(cat==="_Groups")return "그룹 (Group)";
+    if(cat==="_Categories")return "카테고리 타일";
+    if(cat==="General-Icons"||cat==="Res-General-Icons")return "일반";
+    if(cat.indexOf("Res-")===0)return "리소스 · "+cat.slice(4).replace(/-/g," ");
+    return cat.replace(/-/g," ");
+  }
+  // sort key: 내 아이콘 → 서비스 → 리소스 → 그룹/카테고리
+  function catRank(cat){
+    if(cat===MY_CAT)return 0;
+    if(cat==="_Groups"||cat==="_Categories")return 3;
+    if(cat.indexOf("Res-")===0)return 2;
+    return 1;
+  }
+  function allIcons(){return builtinIcons.concat(iconList.map(x=>({name:x.name,uri:x.uri,cat:MY_CAT,ref:x,_kw:(x.name+" "+MY_CAT).toLowerCase()})));}
+  function saveIcons(){try{localStorage.setItem(LS_ICONS,Y.dump(iconList));}
+    catch(e){toast("아이콘 저장 공간이 부족합니다");}}
+  function importIcons(files){
+    const arr=Array.from(files||[]);let pending=arr.length,added=0;
+    if(!pending)return;
+    arr.forEach(f=>{
+      if(f.type.indexOf("image")!==0&&!/\.svg$/i.test(f.name)){if(--pending<=0)finish();return;}
+      const rd=new FileReader();
+      rd.onload=()=>{iconList.push({name:f.name.replace(/\.[^.]+$/,""),uri:rd.result});added++;
+        if(--pending<=0)finish();};
+      rd.onerror=()=>{if(--pending<=0)finish();};
+      rd.readAsDataURL(f);
+    });
+    function finish(){saveIcons();populateIconCats();
+      const sel=document.getElementById("iconCat");if(sel&&iconList.length)sel.value=MY_CAT;   // jump to my icons
+      renderIconGrid();toast(added+"개 아이콘 추가됨");}
+  }
+  // fill the category dropdown (내 아이콘 first, then services, resources, groups)
+  function populateIconCats(){
+    const sel=document.getElementById("iconCat");if(!sel)return;
+    const prev=sel.value;
+    const cats=[...new Set(allIcons().map(ic=>ic.cat))]
+      .sort((a,b)=>catRank(a)-catRank(b)||catLabel(a).localeCompare(catLabel(b)));
+    sel.innerHTML="";
+    cats.forEach(c=>{const o=document.createElement("option");o.value=c;o.textContent=catLabel(c);sel.appendChild(o);});
+    if(cats.includes(prev))sel.value=prev;
+    else if(cats.includes(MY_CAT))sel.value=MY_CAT;
+  }
+  function renderIconGrid(){
+    const grid=document.getElementById("iconGrid");if(!grid)return;
+    const q=(document.getElementById("iconSearch").value||"").trim().toLowerCase();
+    const sel=document.getElementById("iconCat");
+    const catSel=sel?sel.value:"";
+    const all=allIcons();
+    // with a query → search across everything; otherwise show the selected category
+    const list=q ? all.filter(ic=>(ic._kw||ic.name.toLowerCase()).includes(q))
+                 : all.filter(ic=>ic.cat===catSel);
+    grid.innerHTML="";
+    if(sel)sel.style.opacity=q?".5":"1";                 // dim the category picker while searching
+    if(!list.length){grid.innerHTML='<div class="icon-empty">'+(q?"검색 결과가 없습니다.":"이 분류에 아이콘이 없습니다.")+'</div>';return;}
+    const frag=document.createDocumentFragment();
+    list.slice(0,400).forEach(ic=>{
+      const cell=document.createElement("button");cell.className="icon-cell";cell.title=ic.name;
+      const im=document.createElement("img");im.src=ic.uri;im.alt=ic.name;im.draggable=false;im.loading="lazy";
+      const cap=document.createElement("span");cap.textContent=ic.name;
+      cell.appendChild(im);cell.appendChild(cap);
+      cell.addEventListener("mousedown",ev=>{if(ev.button!==0)return;ev.preventDefault();startIconDrag(ic,ev);});
+      if(ic.cat===MY_CAT)cell.addEventListener("contextmenu",ev=>{ev.preventDefault();
+        iconList=iconList.filter(x=>x!==ic.ref);saveIcons();populateIconCats();renderIconGrid();});
+      frag.appendChild(cell);
+    });
+    grid.appendChild(frag);
+    if(list.length>400){const m=document.createElement("div");m.className="icon-empty";
+      m.textContent=list.length+"개 중 400개 표시 — 검색으로 좁혀보세요.";grid.appendChild(m);}
+  }
+  // drag an icon from the panel onto the canvas (click without moving = drop at viewport center)
+  let iconDrag=null;
+  function moveIconGhost(x,y){if(iconDrag){iconDrag.ghost.style.left=(x-24)+"px";iconDrag.ghost.style.top=(y-24)+"px";}}
+  function startIconDrag(ic,ev){
+    const ghost=document.createElement("img");ghost.src=ic.uri;ghost.className="drag-ghost-img";
+    document.body.appendChild(ghost);
+    iconDrag={ic,ghost,sx:ev.clientX,sy:ev.clientY,moved:false};
+    moveIconGhost(ev.clientX,ev.clientY);
+  }
+  window.addEventListener("mousemove",ev=>{
+    if(!iconDrag)return;
+    if(Math.abs(ev.clientX-iconDrag.sx)+Math.abs(ev.clientY-iconDrag.sy)>3)iconDrag.moved=true;
+    moveIconGhost(ev.clientX,ev.clientY);
+  });
+  window.addEventListener("mouseup",ev=>{
+    if(!iconDrag)return;const d=iconDrag;iconDrag=null;d.ghost.remove();
+    const r=canvasWrap.getBoundingClientRect();
+    const inside=ev.clientX>=r.left&&ev.clientX<=r.right&&ev.clientY>=r.top&&ev.clientY<=r.bottom;
+    let x,y;
+    if(inside){const p=cursorPt(ev);x=p.x;y=p.y;}else{x=view.x+view.w/2;y=view.y+view.h/2;}
+    const n=addImageNode(d.ic.uri,x,y,d.ic.name);selectNode(n);
+  });
+  function toggleIconPanel(){document.getElementById("app").classList.toggle("icons-hidden");saveSettings();}
+
+  // ---------- user guide (renders bundled GUIDE.md markdown into a modal) ----------
+  function mdToHtml(md){
+    const esc=s=>s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const inline=t=>esc(t)
+      .replace(/`([^`]+)`/g,"<code>$1</code>")
+      .replace(/\*\*([^*]+)\*\*/g,"<strong>$1</strong>")
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank" rel="noopener">$1</a>');
+    const lines=String(md||"").replace(/\r/g,"").split("\n");
+    let html="",i=0,ul=false,ol=false;
+    const closeLists=()=>{if(ul){html+="</ul>";ul=false;}if(ol){html+="</ol>";ol=false;}};
+    while(i<lines.length){
+      const ln=lines[i];let m;
+      if(/^```/.test(ln)){closeLists();i++;let code="";
+        while(i<lines.length&&!/^```/.test(lines[i])){code+=lines[i]+"\n";i++;}i++;
+        html+="<pre><code>"+esc(code)+"</code></pre>";continue;}
+      if(/^\s*$/.test(ln)){closeLists();i++;continue;}
+      if(m=ln.match(/^(#{1,4})\s+(.*)$/)){closeLists();const lv=m[1].length;
+        html+="<h"+lv+">"+inline(m[2])+"</h"+lv+">";i++;continue;}
+      if(/^---+$/.test(ln.trim())){closeLists();html+="<hr>";i++;continue;}
+      if(/^\s*>\s?/.test(ln)){closeLists();html+="<blockquote>"+inline(ln.replace(/^\s*>\s?/,""))+"</blockquote>";i++;continue;}
+      if(m=ln.match(/^\s*[-*]\s+(.*)$/)){if(!ul){closeLists();html+="<ul>";ul=true;}html+="<li>"+inline(m[1])+"</li>";i++;continue;}
+      if(m=ln.match(/^\s*\d+\.\s+(.*)$/)){if(!ol){closeLists();html+="<ol>";ol=true;}html+="<li>"+inline(m[1])+"</li>";i++;continue;}
+      closeLists();html+="<p>"+inline(ln)+"</p>";i++;
+    }
+    closeLists();return html;
+  }
+  let guideRendered=false;
+  function openGuide(){
+    const body=document.getElementById("guideBody");
+    if(body&&!guideRendered){body.innerHTML=mdToHtml(window.FLOWCANVAS_GUIDE||"# 가이드를 불러올 수 없습니다");guideRendered=true;}
+    document.getElementById("guideModal").style.display="flex";
+  }
+  function closeGuide(){document.getElementById("guideModal").style.display="none";}
 
   // ---------- save / load files ----------
   // ask for a file name via the dialog; extension is fixed (appended), cb receives "name.ext"
@@ -1017,13 +1392,13 @@
     a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   }
   function saveFile(){
-    askFilename("flowcanvas-diagram","json",fn=>{
-      download(new Blob([JSON.stringify(serialize(),null,2)],{type:"application/json"}),fn);
+    askFilename("flowcanvas-diagram","yaml",fn=>{
+      download(new Blob([Y.dump(serialize())],{type:"text/yaml"}),fn);
       toast("저장 완료: "+fn);});}
   function openFile(){document.getElementById("fileInput").click();}
   function handleFile(file){
     const rd=new FileReader();
-    rd.onload=()=>{try{const s=JSON.parse(rd.result);loadState(s);fitView();toast("불러오기 완료");}
+    rd.onload=()=>{try{const s=Y.load(rd.result);loadState(s);fitView();toast("불러오기 완료");}
       catch(e){toast("파일을 읽을 수 없습니다");}};
     rd.readAsText(file);}
 
@@ -1037,12 +1412,13 @@
     curve:["Mod+E"],fit:["F"],save:["Mod+S"],open:["Mod+O"],deselect:["Escape"]};
   let keys=JSON.parse(JSON.stringify(DEFAULT_KEYS));
   let capturing=null;
-  let codeHidden=false;                 // code-panel minimized state (persisted)
   function isMac(){return /Mac|iPhone|iPad/.test((navigator.platform||"")+(navigator.userAgent||""));}
-  function loadSettings(){try{const j=JSON.parse(localStorage.getItem(LS_SETTINGS));
+  let iconsHidden=false;   // left icon panel collapsed state (persisted)
+  function loadSettings(){try{const j=Y.load(localStorage.getItem(LS_SETTINGS));
     if(j&&j.shortcuts){for(const a in DEFAULT_KEYS)keys[a]=j.shortcuts[a]||DEFAULT_KEYS[a];}
-    if(j&&typeof j.codeHidden==="boolean")codeHidden=j.codeHidden;}catch(e){}}
-  function saveSettings(){try{localStorage.setItem(LS_SETTINGS,JSON.stringify({shortcuts:keys,codeHidden}));}catch(e){}}
+    if(j&&typeof j.iconsHidden==="boolean")iconsHidden=j.iconsHidden;}catch(e){}}
+  function saveSettings(){try{const hidden=document.getElementById("app").classList.contains("icons-hidden");
+    localStorage.setItem(LS_SETTINGS,Y.dump({shortcuts:keys,iconsHidden:hidden}));}catch(e){}}
   function comboFromEvent(ev){
     const parts=[];
     if(ev.metaKey||ev.ctrlKey)parts.push("Mod");
@@ -1073,42 +1449,52 @@
   document.getElementById("undoBtn").addEventListener("click",undo);
   document.getElementById("redoBtn").addEventListener("click",redo);
   document.getElementById("curveBtn").addEventListener("click",toggleCurve);
-  document.getElementById("saveBtn").addEventListener("click",saveFile);
-  document.getElementById("openBtn").addEventListener("click",openFile);
+  // file menu: 저장/열기/PNG/설정/초기화 collapsed into one dropdown button
+  function clearAll(){if(!nodes.length)return;
+    askConfirm("모든 노드와 연결을 삭제할까요?",()=>{
+      clearScene();nid=0;eid=0;gid=0;updateEmpty();sync();});}
+  function showFileMenu(){
+    const btn=document.getElementById("fileMenuBtn");const r=btn.getBoundingClientRect();
+    openCtx(r.left,r.bottom+4,[
+      {label:"💾 저장",action:saveFile},
+      {label:"📂 열기",action:openFile},
+      {label:"🖼 PNG 내보내기",action:exportPNG},
+      {sep:true},
+      {label:"⚙ 단축키 설정",action:openSettings},
+      {sep:true},
+      {label:"전체 초기화",danger:true,action:clearAll}]);
+  }
+  document.getElementById("fileMenuBtn").addEventListener("click",e=>{e.stopPropagation();showFileMenu();});
   document.getElementById("fileInput").addEventListener("change",e=>{
     if(e.target.files[0])handleFile(e.target.files[0]);e.target.value="";});
-  document.getElementById("settingsBtn").addEventListener("click",openSettings);
   document.getElementById("keyClose").addEventListener("click",closeSettings);
   document.getElementById("keyReset").addEventListener("click",()=>{
     keys=JSON.parse(JSON.stringify(DEFAULT_KEYS));saveSettings();renderKeyList();toast("기본값으로 복원");});
   document.getElementById("settingsModal").addEventListener("click",e=>{
     if(e.target.id==="settingsModal")closeSettings();});
-  const appEl=document.getElementById("app");
-  document.getElementById("hideCode").addEventListener("click",()=>{
-    appEl.classList.add("code-hidden");codeHidden=true;saveSettings();});
-  document.getElementById("showCode").addEventListener("click",()=>{
-    appEl.classList.remove("code-hidden");codeHidden=false;saveSettings();});
   // hidden color pickers (triggered from the right-click menu)
   document.getElementById("colorPick").addEventListener("input",e=>applyColor(e.target.value));
   document.getElementById("strokePick").addEventListener("input",e=>applyStroke(e.target.value));
   document.getElementById("groupColorPick").addEventListener("input",e=>applyGroupColor(e.target.value));
-  document.getElementById("bgPick").addEventListener("input",e=>{applyBg(e.target.value);genCode();});
+  document.getElementById("bgPick").addEventListener("input",e=>{applyBg(e.target.value);sync();});
   document.getElementById("delBtn").addEventListener("click",deleteSelected);
-  document.getElementById("dir").addEventListener("change",genCode);
   document.getElementById("fitBtn").addEventListener("click",fitView);
   document.getElementById("zoomIn").addEventListener("click",()=>zoomBy(0.8));
   document.getElementById("zoomOut").addEventListener("click",()=>zoomBy(1.25));
   document.getElementById("zoomLevel").addEventListener("click",resetZoom);
-  document.getElementById("pngBtn").addEventListener("click",exportPNG);
-  document.getElementById("clearBtn").addEventListener("click",()=>{
-    if(!nodes.length)return;
-    askConfirm("모든 노드와 연결을 삭제할까요?",()=>{
-      clearScene();nid=0;eid=0;gid=0;updateEmpty();genCode();});});
-  document.getElementById("copyBtn").addEventListener("click",()=>{
-    navigator.clipboard.writeText(genCode()).then(()=>toast("코드 복사됨"),()=>toast("복사 실패"));});
-  document.getElementById("mmdBtn").addEventListener("click",()=>{
-    askFilename("flowcanvas","mmd",fn=>{
-      download(new Blob([genCode()],{type:"text/plain"}),fn);toast(".mmd 저장 완료: "+fn);});});
+  document.getElementById("guideBtn").addEventListener("click",openGuide);
+  document.getElementById("guideClose").addEventListener("click",closeGuide);
+  document.getElementById("guideModal").addEventListener("click",e=>{if(e.target.id==="guideModal")closeGuide();});
+  document.getElementById("playBtn").addEventListener("click",togglePlay);
+  document.getElementById("loopBtn").addEventListener("click",toggleLoop);
+  document.getElementById("orderBtn").addEventListener("click",toggleOrderBadges);
+  document.getElementById("animPick").addEventListener("input",e=>applyAnimColor(e.target.value));
+  document.getElementById("iconCollapse").addEventListener("click",toggleIconPanel);
+  document.getElementById("iconShow").addEventListener("click",toggleIconPanel);
+  document.getElementById("iconImport").addEventListener("click",()=>document.getElementById("iconInput").click());
+  document.getElementById("iconInput").addEventListener("change",e=>{importIcons(e.target.files);e.target.value="";});
+  document.getElementById("iconSearch").addEventListener("input",renderIconGrid);
+  document.getElementById("iconCat").addEventListener("change",renderIconGrid);
 
   // ---------- marquee: drag on empty canvas to box-select nodes ----------
   let marquee=null,marqueeEl=null;
@@ -1153,12 +1539,12 @@
       const e=edges.find(x=>x.id===selEdge);if(!e)return;
       const a=nodes.find(n=>n.id===e.from),b=nodes.find(n=>n.id===e.to);if(!a||!b)return;
       const p=diagramToClient((a.x+b.x)/2,(a.y+b.y)/2);
-      openInline(p.x,p.y,e.label,v=>{e.label=v.trim();drawEdge(e);genCode();});return;
+      openInline(p.x,p.y,e.label,v=>{e.label=v.trim();drawEdge(e);sync();});return;
     }
     if(selNodes.size===1){                              // single node → edit its name
       const n=nodes.find(x=>selNodes.has(x.id));if(!n)return;
       const p=diagramToClient(n.x,n.y);
-      openInline(p.x,p.y,n.label,v=>{n.label=v.trim()||n.label;refreshNode(n);genCode();});return;
+      openInline(p.x,p.y,n.label,v=>{n.label=v.trim()||n.label;refreshNode(n);sync();});return;
     }
     if(selNodes.size>1){                                // selection equals a group's members → rename group
       const sg=subgraphs.find(g=>g.nodes.size===selNodes.size&&[...g.nodes].every(id=>selNodes.has(id)));
@@ -1214,9 +1600,12 @@
 
   // ---------- startup: load settings + saved diagram (survives restart) ----------
   loadSettings();
-  if(codeHidden)appEl.classList.add("code-hidden");   // restore minimized code panel
+  loadBuiltinIcons();
+  loadIcons();
+  if(iconsHidden)document.getElementById("app").classList.add("icons-hidden");
+  populateIconCats();renderIconGrid();
   (function start(){
-    let saved=null;try{saved=JSON.parse(localStorage.getItem(LS_DIAGRAM));}catch(e){}
+    let saved=null;try{saved=Y.load(localStorage.getItem(LS_DIAGRAM));}catch(e){}
     restoring=true;
     if(saved&&saved.nodes&&saved.nodes.length)loadState(saved);
     else seedDefault();
@@ -1225,7 +1614,7 @@
     applyBg(bgColor);
     lastCommitted=snapshot();
     updateUndoBtns();
-    genCode();
+    sync();
     homeView();   // default zoom fixed at 100%
   })();
 })();
