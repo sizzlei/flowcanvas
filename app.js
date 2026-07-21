@@ -709,7 +709,9 @@
   }
   // global animation (pulse) color — applies to every edge's flow animation
   function applyAnimColor(hex){animColor=hex;
-    if(animState)edges.forEach(e=>{if(e.pulseEl)e.pulseEl.style.stroke=animColor;});sync();}
+    if(animState)edges.forEach(e=>{if(e.pulseGrad)
+      for(let k=0;k<e.pulseGrad.childNodes.length;k++)e.pulseGrad.childNodes[k].setAttribute("stop-color",animColor);});
+    sync();}
 
   // ---------- subgraphs ----------
   function renderGroups(){
@@ -1131,17 +1133,37 @@
   let animState=null, animLoop=false;
   const ANIM_STEP=1100;                        // ms per order-group
   function ensurePulse(e){
-    if(!e.pulseEl){const p=document.createElementNS(SVGNS,"path");p.setAttribute("class","pulse");
-      p.setAttribute("d",e.pathEl.getAttribute("d"));e.el.appendChild(p);e.pulseEl=p;}
+    if(!e.pulseEl){
+      const gid="pg"+e.id;
+      const grad=document.createElementNS(SVGNS,"linearGradient");
+      grad.setAttribute("id",gid);grad.setAttribute("gradientUnits","userSpaceOnUse");
+      const mk=(off,op)=>{const s=document.createElementNS(SVGNS,"stop");
+        s.setAttribute("offset",off);s.setAttribute("stop-opacity",op);return s;};
+      // transparent tail → bright head, so the streak fades out behind itself
+      grad.appendChild(mk("0","0"));grad.appendChild(mk("0.5","0.55"));grad.appendChild(mk("1","1"));
+      e.el.appendChild(grad);e.pulseGrad=grad;
+      const p=document.createElementNS(SVGNS,"path");p.setAttribute("class","pulse");
+      p.setAttribute("d",e.pathEl.getAttribute("d"));p.style.stroke="url(#"+gid+")";
+      e.el.appendChild(p);e.pulseEl=p;
+    }
     return e.pulseEl;
   }
-  function clearPulses(){edges.forEach(e=>{if(e.pulseEl){e.pulseEl.remove();e.pulseEl=null;}});}
+  function clearPulses(){edges.forEach(e=>{
+    if(e.pulseEl){e.pulseEl.remove();e.pulseEl=null;}
+    if(e.pulseGrad){e.pulseGrad.remove();e.pulseGrad=null;}});}
   function drawPulse(e,u){                      // u in [0,1] over this edge's step
-    const path=e.pathEl,L=path.getTotalLength()||1,SEG=Math.max(24,L*0.35);
-    const full=u*(L+SEG),head=Math.min(L,full);let tail=Math.max(0,full-SEG);tail=Math.min(tail,L);
+    const path=e.pathEl,L=path.getTotalLength()||1,SEG=Math.max(30,L*0.5);
+    const ease=u<0.5?2*u*u:1-Math.pow(-2*u+2,2)/2;        // easeInOutQuad for smoother travel
+    const full=ease*(L+SEG),head=Math.min(L,full);let tail=Math.max(0,full-SEG);tail=Math.min(tail,L);
     const p=ensurePulse(e);p.setAttribute("d",path.getAttribute("d"));
-    p.style.stroke=animColor;p.style.filter="drop-shadow(0 0 5px "+animColor+")";
     p.style.strokeDasharray="0 "+tail+" "+(head-tail)+" "+(L+SEG);
+    p.style.filter="drop-shadow(0 0 6px "+animColor+")";
+    // orient the gradient along the visible segment (tail → head) and tint to the current color
+    let a=path.getPointAtLength(tail),b=path.getPointAtLength(head);
+    if(a.x===b.x&&a.y===b.y)b=path.getPointAtLength(Math.min(L,head+0.5));
+    const g=e.pulseGrad;
+    g.setAttribute("x1",a.x);g.setAttribute("y1",a.y);g.setAttribute("x2",b.x);g.setAttribute("y2",b.y);
+    for(let k=0;k<g.childNodes.length;k++)g.childNodes[k].setAttribute("stop-color",animColor);
   }
   function setPlayBtn(on){const b=document.getElementById("playBtn");
     if(b){b.classList.toggle("on",on);b.textContent=on?"⏹ 정지":"▶ 재생";}}
