@@ -41,6 +41,8 @@
         <button id="redoBtn" title="다시실행">↷</button>
         <button id="delBtn" class="danger" title="삭제">🗑</button>
         <button id="curveBtn" title="곡선/직선 화살표">⤳ 곡선</button>
+        <button id="snapBtn" title="격자 스냅 (드래그·방향키 이동 시 격자에 맞춤)">⊞ 격자</button>
+        <button id="contBtn" title="컨테이너 추가 (VPC/Region/Subnet 등)">▭ 컨테이너</button>
       </div>
     </section>
 
@@ -69,8 +71,7 @@
     <section class="tbar-grp">
       <span class="grp-cap">파일</span>
       <div class="grp-row">
-        <button id="fileMenuBtn" title="파일 메뉴 (저장·열기·PNG·설정·초기화)">☰ 메뉴 ▾</button>
-        <button id="guideBtn" title="사용자 가이드 보기">❓ 가이드</button>
+        <button id="fileMenuBtn" title="메뉴 (저장·열기·내보내기·설정·가이드)">☰ 메뉴 ▾</button>
       </div>
     </section>
     <input type="file" id="fileInput" accept=".yaml,.yml,text/yaml,application/json,.json" style="display:none">
@@ -149,6 +150,7 @@
 
 <script src="aws-icons.js"></script>
 <script src="guide.js"></script>
+<script src="gif.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

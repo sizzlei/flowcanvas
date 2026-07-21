@@ -146,6 +146,8 @@
         w=+sg.rectEl.getAttribute("width"),h=+sg.rectEl.getAttribute("height");
       minX=Math.min(minX,x);minY=Math.min(minY,y);maxX=Math.max(maxX,x+w);maxY=Math.max(maxY,y+h);
     });
+    (typeof containers!=="undefined"?containers:[]).forEach(c=>{
+      minX=Math.min(minX,c.x);minY=Math.min(minY,c.y);maxX=Math.max(maxX,c.x+c.w);maxY=Math.max(maxY,c.y+c.h);});
     return {minX,minY,maxX,maxY};
   }
   function fitView(){
@@ -164,9 +166,13 @@
   let nodes=[]; // {id,label,shape,x,y,w,h,fill,stroke,bstyle,el,shapeEl,textEl,handles[],decor[]}
   let edges=[]; // {id,from,to,label,line,head,order,tags,el,pathEl,hitEl,textEl,bgEl}
   let subgraphs=[]; // {id,title,nodes:Set,el,rectEl,titleEl}
-  let nid=0, eid=0, gid=0;
+  let containers=[]; // {id,label,x,y,w,h,color,el,bodyEl,titleBg,titleEl,resizeEl}
+  let nid=0, eid=0, gid=0, cid=0;
+  let selContainer=null; // selected container id
   let connecting=null; // {source, }
   let edgeCurve=false;
+  let snapOn=false; const GRID=20;           // grid-snap toggle + spacing
+  const snapVal=v=>Math.round(v/GRID)*GRID;
   let bgColor="#0d0b13"; // canvas background color
   let animColor="#e879f9"; // flow-animation (pulse) color, shared by all edges
   let edgeDefaults={line:"solid",head:"arrow"}; // style applied to new edges
@@ -174,6 +180,14 @@
   // layer for subgraph boxes, drawn behind edges/nodes
   const gGroups=document.createElementNS(SVGNS,"g");gGroups.setAttribute("id","groups");
   svg.insertBefore(gGroups,gEdges);
+  // layer for container frames (VPC/Region/…), drawn behind everything
+  const gContainers=document.createElementNS(SVGNS,"g");gContainers.setAttribute("id","containers");
+  svg.insertBefore(gContainers,gGroups);
+  const CONTAINER_PRESETS=[
+    {label:"AWS Cloud",color:"#232F3E"},{label:"Region",color:"#00A4A6"},
+    {label:"VPC",color:"#8C4FFF"},{label:"Availability Zone",color:"#00A4A6"},
+    {label:"Public subnet",color:"#7AA116"},{label:"Private subnet",color:"#00A4A6"},
+    {label:"Security group",color:"#DD3444"},{label:"Group",color:"#5A6B86"}];
 
   function toast(m){const t=document.getElementById("toast");t.textContent=m;
     t.classList.add("show");clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove("show"),1700);}
@@ -246,6 +260,7 @@
     const node=nodeUnder({clientX:cx,clientY:cy});
     const edgeEl=targetEl&&targetEl.closest&&targetEl.closest(".edge");
     const groupEl=targetEl&&targetEl.closest&&targetEl.closest(".subgraph");
+    const contEl=targetEl&&targetEl.closest&&targetEl.closest(".container");
     let items;
     if(node){
       if(!selNodes.has(node.id))selectNode(node);
@@ -260,6 +275,18 @@
           {label:"─ 실선",action:()=>applyBstyle("solid")},
           {label:"┈ 점선",action:()=>applyBstyle("dashed")},
           {label:"━ 굵게",action:()=>applyBstyle("thick")}]},
+        {label:"정렬",sub:[
+          {label:"⬅ 왼쪽",action:()=>alignNodes("left")},
+          {label:"↔ 가운데(가로)",action:()=>alignNodes("hcenter")},
+          {label:"➡ 오른쪽",action:()=>alignNodes("right")},
+          {sep:true},
+          {label:"⬆ 위",action:()=>alignNodes("top")},
+          {label:"↕ 가운데(세로)",action:()=>alignNodes("vcenter")},
+          {label:"⬇ 아래",action:()=>alignNodes("bottom")},
+          {sep:true},
+          {label:"가로 균등분배",action:()=>distributeNodes("h")},
+          {label:"세로 균등분배",action:()=>distributeNodes("v")}]},
+        {label:"복제",action:duplicateSelection},
         {label:"그룹으로 묶기",action:makeGroup},
         {sep:true},
         {label:"삭제",danger:true,action:deleteSelected}];
@@ -294,12 +321,20 @@
         {label:"그룹 색 직접…",action:()=>document.getElementById("groupColorPick").click()},
         {sep:true},
         {label:"그룹 해제",action:ungroup}];
+    }else if(contEl){
+      const c=containers.find(x=>x.el===contEl);if(c)selectContainer(c);
+      items=[
+        {label:"이름 변경",action:()=>c&&renameContainer(c,cx,cy)},
+        {label:"색",swatches:CONTAINER_PRESETS.map(p=>p.color),onPick:hex=>{if(c){c.color=hex;drawContainer(c);sync();}}},
+        {sep:true},
+        {label:"삭제",danger:true,action:deleteSelected}];
     }else{
       const p=cursorPt({clientX:cx,clientY:cy});
       const shapes=[["둥근 사각형","round"],["사각형","rect"],["스타디움","stadium"],["마름모","diamond"],
         ["원","circle"],["육각형","hexagon"],["원통(DB)","cylinder"],["서브루틴","subroutine"]];
       items=[
         {label:"노드 추가",sub:shapes.map(s=>({label:s[0],action:()=>{const n=addNode(s[1],p.x,p.y);selectNode(n);}}))},
+        {label:"컨테이너 추가",sub:CONTAINER_PRESETS.map(pr=>({label:pr.label,action:()=>addContainer(pr,p.x,p.y)}))},
         {label:"아이콘 패널 열기/닫기",action:toggleIconPanel},
         {label:"화면 맞춤",action:fitView},
         {label:"배경 다크/라이트",action:toggleBg}];
@@ -565,6 +600,8 @@
     selNodes.clear();
     if(selEdge!=null){const e=edges.find(x=>x.id===selEdge);if(e)e.el.classList.remove("sel");}
     selEdge=null;
+    if(selContainer!=null){const c=containers.find(x=>x.id===selContainer);if(c)c.el.classList.remove("sel");}
+    selContainer=null;
   }
   // additive=true keeps the existing node selection (used by marquee/shift)
   function selectNode(n,additive){
@@ -604,7 +641,8 @@
       if(!dragging)return;const p=cursorPt(ev);
       const dx=p.x-start.x,dy=p.y-start.y;
       if(Math.abs(dx)+Math.abs(dy)>1)moved=true;
-      group.forEach(g=>{g.n.x=g.x0+dx;g.n.y=g.y0+dy;position(g.n);});
+      group.forEach(g=>{g.n.x=g.x0+dx;g.n.y=g.y0+dy;
+        if(snapOn){g.n.x=snapVal(g.n.x);g.n.y=snapVal(g.n.y);}position(g.n);});
       edges.forEach(drawEdge);renderGroups();
     });
     window.addEventListener("mouseup",()=>{if(dragging){dragging=false;n.el.style.cursor="grab";if(moved)sync();}});
@@ -672,6 +710,11 @@
   }
   function deleteSelected(){
     stopAnim();
+    if(selContainer!=null){                          // delete the selected container (keeps its nodes)
+      const c=containers.find(x=>x.id===selContainer);
+      if(c){c.el.remove();containers=containers.filter(x=>x.id!==c.id);}
+      selContainer=null;sync();return;
+    }
     if(selEdge!=null){                               // delete the selected edge
       const e=edges.find(x=>x.id===selEdge);
       if(e){e.el.remove();edges=edges.filter(x=>x.id!==e.id);}
@@ -712,6 +755,127 @@
     if(animState)edges.forEach(e=>{if(e.pulseGrad)
       for(let k=0;k<e.pulseGrad.childNodes.length;k++)e.pulseGrad.childNodes[k].setAttribute("stop-color",animColor);});
     sync();}
+
+  // ---------- editing helpers: duplicate / copy-paste / align / distribute / nudge ----------
+  function selectedNodeList(){return [...selNodes].map(id=>nodes.find(n=>n.id===id)).filter(Boolean);}
+  let nodeClipboard=null;
+  // snapshot selected nodes + the edges wholly inside the selection
+  function cloneSelection(){
+    if(!selNodes.size)return null;
+    const idset=new Set(selNodes);
+    const ns=selectedNodeList().map(n=>({label:n.label,shape:n.shape,x:n.x,y:n.y,
+      fill:n.fill,stroke:n.stroke,bstyle:n.bstyle,img:n.img,_oid:n.id}));
+    const es=edges.filter(e=>idset.has(e.from)&&idset.has(e.to)).map(e=>({from:e.from,to:e.to,
+      label:e.label,line:e.line,head:e.head,color:e.color,order:e.order,tags:(e.tags||[]).slice()}));
+    return {nodes:ns,edges:es};
+  }
+  function pasteData(data,dx,dy){
+    if(!data||!data.nodes.length)return;
+    clearSel();const map={};
+    data.nodes.forEach(d=>{
+      const n=d.shape==="image"?addImageNode(d.img,d.x+dx,d.y+dy,d.label):addNode(d.shape,d.x+dx,d.y+dy,d.label);
+      n.fill=d.fill;n.stroke=d.stroke;n.bstyle=d.bstyle;drawShape(n);
+      map[d._oid]=n.id;selNodes.add(n.id);n.el.classList.add("sel");
+    });
+    data.edges.forEach(d=>{if(map[d.from]&&map[d.to]){
+      addEdge(map[d.from],map[d.to],d.label,{line:d.line,head:d.head,color:d.color});
+      const ne=edges[edges.length-1];if(ne){ne.order=d.order||1;ne.tags=(d.tags||[]).slice();}}});
+    edges.forEach(drawEdge);sync();
+  }
+  function duplicateSelection(){const d=cloneSelection();if(d)pasteData(d,GRID,GRID);}
+  function copySelection(){nodeClipboard=cloneSelection();if(nodeClipboard)toast(nodeClipboard.nodes.length+"개 복사됨");}
+  function pasteClipboard(){if(nodeClipboard)pasteData(nodeClipboard,GRID,GRID);}
+  function alignNodes(mode){
+    const ns=selectedNodeList();if(ns.length<2){toast("2개 이상 선택하세요");return;}
+    const minL=Math.min(...ns.map(n=>n.x-n.w/2)),maxR=Math.max(...ns.map(n=>n.x+n.w/2));
+    const minT=Math.min(...ns.map(n=>n.y-n.h/2)),maxB=Math.max(...ns.map(n=>n.y+n.h/2));
+    const cx=(minL+maxR)/2,cy=(minT+maxB)/2;
+    ns.forEach(n=>{
+      if(mode==="left")n.x=minL+n.w/2;else if(mode==="right")n.x=maxR-n.w/2;else if(mode==="hcenter")n.x=cx;
+      else if(mode==="top")n.y=minT+n.h/2;else if(mode==="bottom")n.y=maxB-n.h/2;else if(mode==="vcenter")n.y=cy;
+      position(n);});
+    edges.forEach(drawEdge);renderGroups();sync();
+  }
+  function distributeNodes(axis){
+    const ns=selectedNodeList();if(ns.length<3){toast("3개 이상 선택하세요");return;}
+    ns.sort((a,b)=>axis==="h"?a.x-b.x:a.y-b.y);
+    const s=axis==="h"?ns[0].x:ns[0].y, e=axis==="h"?ns[ns.length-1].x:ns[ns.length-1].y, gap=(e-s)/(ns.length-1);
+    ns.forEach((n,i)=>{if(axis==="h")n.x=s+gap*i;else n.y=s+gap*i;position(n);});
+    edges.forEach(drawEdge);renderGroups();sync();
+  }
+  function nudgeSelection(dx,dy){
+    const ns=selectedNodeList();if(!ns.length)return;
+    ns.forEach(n=>{n.x+=dx;n.y+=dy;if(snapOn){n.x=snapVal(n.x);n.y=snapVal(n.y);}position(n);});
+    edges.forEach(drawEdge);renderGroups();sync();
+  }
+  function toggleSnap(){snapOn=!snapOn;const b=document.getElementById("snapBtn");
+    if(b)b.classList.toggle("on",snapOn);toast(snapOn?"격자 스냅 켜짐":"격자 스냅 꺼짐");}
+
+  // ---------- containers (resizable AWS-style frames: VPC/Region/subnet…) ----------
+  function inBox(c,px,py){return px>=c.x&&px<=c.x+c.w&&py>=c.y&&py<=c.y+c.h;}
+  function addContainer(preset,x,y){
+    const c={id:++cid,label:preset.label,color:preset.color,
+      x:(x??(view.x+view.w/2))-130,y:(y??(view.y+view.h/2))-90,w:260,h:180};
+    if(snapOn){c.x=snapVal(c.x);c.y=snapVal(c.y);}
+    containers.push(c);renderContainer(c);selectContainer(c);sync();return c;
+  }
+  function renderContainer(c){
+    const g=document.createElementNS(SVGNS,"g");g.setAttribute("class","container");g.dataset.id=c.id;
+    const body=document.createElementNS(SVGNS,"rect");body.setAttribute("class","cont-body");
+    const tb=document.createElementNS(SVGNS,"rect");tb.setAttribute("class","cont-title-bg");
+    const tt=document.createElementNS(SVGNS,"text");tt.setAttribute("class","cont-title");
+    const rz=document.createElementNS(SVGNS,"rect");rz.setAttribute("class","cont-resize");
+    g.appendChild(body);g.appendChild(tb);g.appendChild(tt);g.appendChild(rz);
+    gContainers.appendChild(g);
+    c.el=g;c.bodyEl=body;c.titleBg=tb;c.titleEl=tt;c.resizeEl=rz;
+    wireContainer(c);drawContainer(c);
+  }
+  function drawContainer(c){
+    const b=c.bodyEl;
+    b.setAttribute("x",c.x);b.setAttribute("y",c.y);b.setAttribute("width",c.w);b.setAttribute("height",c.h);
+    b.setAttribute("rx",10);b.setAttribute("fill",c.color);b.setAttribute("fill-opacity","0.06");
+    b.setAttribute("stroke",c.color);b.setAttribute("stroke-dasharray","7 5");b.setAttribute("stroke-width","1.6");
+    const tw=measure(c.label)*0.95+24;   // title bar wide enough for the label
+    c.titleBg.setAttribute("x",c.x);c.titleBg.setAttribute("y",c.y);c.titleBg.setAttribute("width",tw);
+    c.titleBg.setAttribute("height",22);c.titleBg.setAttribute("rx",8);c.titleBg.setAttribute("fill",c.color);
+    c.titleEl.setAttribute("x",c.x+11);c.titleEl.setAttribute("y",c.y+15);
+    c.titleEl.textContent=c.label;c.titleEl.style.fill=contrastText(c.color);
+    c.resizeEl.setAttribute("x",c.x+c.w-14);c.resizeEl.setAttribute("y",c.y+c.h-14);
+    c.resizeEl.setAttribute("width",12);c.resizeEl.setAttribute("height",12);c.resizeEl.setAttribute("rx",3);
+    c.resizeEl.setAttribute("fill",c.color);
+  }
+  function selectContainer(c){clearSel();selContainer=c.id;c.el.classList.add("sel");}
+  function renameContainer(c,x,y){openInline(x,y,c.label,
+    v=>{c.label=String(v==null?"":v).trim()||c.label;drawContainer(c);sync();});}
+  function wireContainer(c){
+    let mode=null,start=null,x0,y0,w0,h0,capN=[],capC=[];
+    c.titleBg.addEventListener("mousedown",ev=>{
+      if(ev.button!==0||spaceDown)return;ev.stopPropagation();selectContainer(c);
+      start=cursorPt(ev);x0=c.x;y0=c.y;mode="move";
+      capN=nodes.filter(n=>inBox(c,n.x,n.y)).map(n=>({n,x:n.x,y:n.y}));
+      capC=containers.filter(o=>o!==c&&inBox(c,o.x+o.w/2,o.y+o.h/2)).map(o=>({o,x:o.x,y:o.y}));
+    });
+    c.titleBg.addEventListener("dblclick",ev=>{ev.stopPropagation();renameContainer(c,ev.clientX,ev.clientY);});
+    c.resizeEl.addEventListener("mousedown",ev=>{
+      if(ev.button!==0)return;ev.stopPropagation();selectContainer(c);
+      start=cursorPt(ev);w0=c.w;h0=c.h;mode="resize";});
+    window.addEventListener("mousemove",ev=>{
+      if(!mode)return;const p=cursorPt(ev),dx=p.x-start.x,dy=p.y-start.y;
+      if(mode==="move"){
+        c.x=x0+dx;c.y=y0+dy;if(snapOn){c.x=snapVal(c.x);c.y=snapVal(c.y);}
+        capN.forEach(g=>{g.n.x=g.x+dx;g.n.y=g.y+dy;if(snapOn){g.n.x=snapVal(g.n.x);g.n.y=snapVal(g.n.y);}position(g.n);});
+        capC.forEach(g=>{g.o.x=g.x+dx;g.o.y=g.y+dy;if(snapOn){g.o.x=snapVal(g.o.x);g.o.y=snapVal(g.o.y);}drawContainer(g.o);});
+        drawContainer(c);edges.forEach(drawEdge);renderGroups();
+      }else{
+        c.w=Math.max(90,w0+dx);c.h=Math.max(60,h0+dy);
+        if(snapOn){c.w=snapVal(c.w);c.h=snapVal(c.h);}drawContainer(c);
+      }
+    });
+    window.addEventListener("mouseup",()=>{if(mode){mode=null;sync();}});
+  }
+  function openContainerMenu(cx,cy){
+    openCtx(cx,cy,CONTAINER_PRESETS.map(p=>({label:p.label,action:()=>addContainer(p)})));
+  }
 
   // ---------- subgraphs ----------
   function renderGroups(){
@@ -824,6 +988,7 @@
     bg.setAttribute("x",minX);bg.setAttribute("y",minY);bg.setAttribute("width",w);bg.setAttribute("height",h);
     bg.setAttribute("fill",bgColor);clone.appendChild(bg);
     clone.appendChild(buildDefs());
+    clone.appendChild(gContainers.cloneNode(true));
     clone.appendChild(gGroups.cloneNode(true));
     clone.appendChild(gEdges.cloneNode(true));
     clone.appendChild(gNodes.cloneNode(true));
@@ -861,8 +1026,83 @@
       el.setAttribute("font-size","13");el.setAttribute("font-weight","600");
       el.setAttribute("font-family","sans-serif");});
     root.querySelectorAll(".sel").forEach(el=>el.classList.remove("sel"));
-    // UI-only overlays (animation pulse, order badges) don't belong in the export
-    root.querySelectorAll(".pulse,.order-badge,.order-badge-t").forEach(el=>el.remove());
+    // UI-only overlays (animation pulse, order badges, resize handles) don't belong in the export
+    root.querySelectorAll(".pulse,.order-badge,.order-badge-t,.cont-resize").forEach(el=>el.remove());
+  }
+
+  // ---------- animation export (GIF + WebM) ----------
+  function hexRgb(h){h=(h||"#000").replace("#","");if(h.length===3)h=h.split("").map(x=>x+x).join("");
+    const n=parseInt(h,16);return ((n>>16)&255)+","+((n>>8)&255)+","+(n&255);}
+  function loadImg(src){return new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src=src;});}
+  // static scene rasterized to an SVG string (no pulses; those are drawn per-frame on canvas)
+  function sceneSVGString(minX,minY,bw,bh,W,H){
+    const clone=document.createElementNS(SVGNS,"svg");
+    clone.setAttribute("xmlns",SVGNS);clone.setAttribute("width",W);clone.setAttribute("height",H);
+    clone.setAttribute("viewBox",minX+" "+minY+" "+bw+" "+bh);
+    const bg=document.createElementNS(SVGNS,"rect");bg.setAttribute("x",minX);bg.setAttribute("y",minY);
+    bg.setAttribute("width",bw);bg.setAttribute("height",bh);bg.setAttribute("fill",bgColor);clone.appendChild(bg);
+    clone.appendChild(buildDefs());
+    clone.appendChild(gContainers.cloneNode(true));clone.appendChild(gGroups.cloneNode(true));
+    clone.appendChild(gEdges.cloneNode(true));clone.appendChild(gNodes.cloneNode(true));
+    inlineStyles(clone);
+    return new XMLSerializer().serializeToString(clone);
+  }
+  // draw one edge's gradient comet onto a 2D canvas (diagram→canvas via minX/minY/scale)
+  function drawPulseCanvas(ctx,e,u,minX,minY,scale){
+    const path=e.pathEl,L=path.getTotalLength()||1,SEG=Math.max(30,L*0.5);
+    const ease=u<0.5?2*u*u:1-Math.pow(-2*u+2,2)/2;
+    const full=ease*(L+SEG),head=Math.min(L,full);let tail=Math.max(0,full-SEG);tail=Math.min(tail,L);
+    if(head-tail<0.5)return;
+    const A=path.getPointAtLength(tail),B=path.getPointAtLength(head),rgb=hexRgb(animColor);
+    const g=ctx.createLinearGradient((A.x-minX)*scale,(A.y-minY)*scale,(B.x-minX)*scale,(B.y-minY)*scale);
+    g.addColorStop(0,"rgba("+rgb+",0)");g.addColorStop(0.5,"rgba("+rgb+",0.55)");g.addColorStop(1,"rgba("+rgb+",1)");
+    ctx.save();ctx.strokeStyle=g;ctx.lineWidth=4.5*scale;ctx.lineCap="round";ctx.lineJoin="round";
+    ctx.shadowColor="rgb("+rgb+")";ctx.shadowBlur=6*scale;ctx.beginPath();
+    const steps=Math.max(2,Math.ceil((head-tail)/2));
+    for(let i=0;i<=steps;i++){const pt=path.getPointAtLength(tail+(head-tail)*i/steps);
+      i?ctx.lineTo((pt.x-minX)*scale,(pt.y-minY)*scale):ctx.moveTo((pt.x-minX)*scale,(pt.y-minY)*scale);}
+    ctx.stroke();ctx.restore();
+  }
+  async function prepAnim(){
+    stopAnim();clearPulses();
+    const live=edges.filter(e=>e.el.style.display!=="none");
+    if(!live.length){toast("재생할 흐름선이 없습니다");return null;}
+    let {minX,minY,maxX,maxY}=contentBounds();const pad=40;minX-=pad;minY-=pad;maxX+=pad;maxY+=pad;
+    const bw=maxX-minX,bh=maxY-minY,s=Math.min(2,800/Math.max(bw,bh));
+    const W=Math.max(2,Math.round(bw*s)),H=Math.max(2,Math.round(bh*s));
+    const baseImg=await loadImg("data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(sceneSVGString(minX,minY,bw,bh,W,H)))));
+    const orders=[...new Set(live.map(e=>e.order||1))].sort((a,b)=>a-b);
+    return {minX,minY,scale:W/bw,W,H,baseImg,live,orders,total:orders.length*ANIM_STEP};
+  }
+  function paintFrame(ctx,p,t){
+    ctx.clearRect(0,0,p.W,p.H);ctx.drawImage(p.baseImg,0,0,p.W,p.H);
+    const gi=Math.min(p.orders.length-1,Math.floor(t/ANIM_STEP)),u=(t-gi*ANIM_STEP)/ANIM_STEP;
+    p.live.filter(e=>(e.order||1)===p.orders[gi]).forEach(e=>drawPulseCanvas(ctx,e,u,p.minX,p.minY,p.scale));
+  }
+  async function exportGIF(fn){
+    const p=await prepAnim();if(!p)return;
+    const fps=20,fc=Math.min(90,Math.max(8,Math.round(p.total/1000*fps)));
+    const cv=document.createElement("canvas");cv.width=p.W;cv.height=p.H;const ctx=cv.getContext("2d");
+    const frames=[];for(let i=0;i<fc;i++){paintFrame(ctx,p,(i/fc)*p.total);frames.push(ctx.getImageData(0,0,p.W,p.H).data);}
+    toast("GIF 인코딩 중…");
+    setTimeout(()=>{try{const bytes=buildGIF(frames,p.W,p.H,{delay:Math.round(100/fps),loop:0});
+      download(new Blob([bytes],{type:"image/gif"}),fn);toast("GIF 저장 완료: "+fn);}
+      catch(err){toast("GIF 생성 실패");}},30);
+  }
+  async function exportWebM(fn,loops){
+    if(!window.MediaRecorder){toast("이 브라우저는 WebM 녹화를 지원하지 않습니다");return;}
+    loops=Math.max(1,Math.min(30,loops||2));
+    const p=await prepAnim();if(!p)return;
+    const cv=document.createElement("canvas");cv.width=p.W;cv.height=p.H;const ctx=cv.getContext("2d");
+    const stream=cv.captureStream(30);
+    const mime=MediaRecorder.isTypeSupported("video/webm;codecs=vp9")?"video/webm;codecs=vp9":"video/webm";
+    let rec;try{rec=new MediaRecorder(stream,{mimeType:mime,videoBitsPerSecond:6000000});}catch(e){rec=new MediaRecorder(stream);}
+    const chunks=[];rec.ondataavailable=ev=>{if(ev.data&&ev.data.size)chunks.push(ev.data);};
+    rec.onstop=()=>{download(new Blob(chunks,{type:"video/webm"}),fn);toast("WebM 저장 완료: "+fn);};
+    paintFrame(ctx,p,0);rec.start();toast("WebM 녹화 중… ("+loops+"회 반복)");
+    const dur=p.total*loops,t0=performance.now();
+    (function tick(){const el=performance.now()-t0;paintFrame(ctx,p,el%p.total);
+      if(el<dur)requestAnimationFrame(tick);else rec.stop();})();
   }
 
   // ---------- inline label editor (tooltip box) ----------
@@ -1010,17 +1250,19 @@
 
   // ---------- serialize / load ----------
   function clearScene(){stopAnim();nodes.forEach(n=>n.el.remove());edges.forEach(e=>e.el.remove());
-    subgraphs.forEach(sg=>sg.el.remove());
-    nodes=[];edges=[];subgraphs=[];selNodes.clear();selEdge=null;}
-  function serialize(){return {v:3,edgeCurve,bgColor,animColor,nid,eid,gid,
+    subgraphs.forEach(sg=>sg.el.remove());containers.forEach(c=>c.el.remove());
+    nodes=[];edges=[];subgraphs=[];containers=[];selNodes.clear();selEdge=null;selContainer=null;}
+  function serialize(){return {v:3,edgeCurve,bgColor,animColor,nid,eid,gid,cid,
     nodes:nodes.map(n=>{const o={id:n.id,label:n.label,shape:n.shape,x:Math.round(n.x),y:Math.round(n.y),
       fill:n.fill,stroke:n.stroke,bstyle:n.bstyle};if(n.shape==="image")o.img=n.img;return o;}),
     edges:edges.map(e=>({id:e.id,from:e.from,to:e.to,label:e.label,line:e.line,head:e.head,
       order:e.order||1,tags:(e.tags||[]).slice()})),
-    groups:subgraphs.map(sg=>({id:sg.id,title:sg.title,nodes:[...sg.nodes],color:sg.color}))};}
+    groups:subgraphs.map(sg=>({id:sg.id,title:sg.title,nodes:[...sg.nodes],color:sg.color})),
+    containers:containers.map(c=>({id:c.id,label:c.label,x:Math.round(c.x),y:Math.round(c.y),
+      w:Math.round(c.w),h:Math.round(c.h),color:c.color}))};}
   function loadState(s){
     clearScene();activeTag=null;
-    nid=s.nid||0;eid=s.eid||0;gid=s.gid||0;
+    nid=s.nid||0;eid=s.eid||0;gid=s.gid||0;cid=s.cid||0;
     edgeCurve=!!s.edgeCurve;updateCurveBtn();
     applyBg(s.bgColor||"#0d0b13");
     animColor=s.animColor||"#e879f9";const ap=document.getElementById("animPick");if(ap)ap.value=animColor;
@@ -1031,9 +1273,12 @@
       line:d.line||"solid",head:d.head||"arrow",
       order:d.order||1,tags:d.tags||[]};edges.push(e);renderEdge(e);});
     (s.groups||[]).forEach(d=>rebuildGroup(d));
+    (s.containers||[]).forEach(d=>{const c={id:d.id,label:d.label||"Group",color:d.color||"#5A6B86",
+      x:d.x,y:d.y,w:d.w||260,h:d.h||180};containers.push(c);renderContainer(c);});
     nid=Math.max(nid,0,...nodes.map(n=>n.id));
     eid=Math.max(eid,0,...edges.map(e=>e.id));
     gid=Math.max(gid,0,...subgraphs.map(sg=>sg.id));
+    cid=Math.max(cid,0,...containers.map(c=>c.id));
     updateEmpty();renderGroups();sync();
   }
   // recreate a subgraph from serialized data
@@ -1492,6 +1737,9 @@
   document.getElementById("undoBtn").addEventListener("click",undo);
   document.getElementById("redoBtn").addEventListener("click",redo);
   document.getElementById("curveBtn").addEventListener("click",toggleCurve);
+  document.getElementById("snapBtn").addEventListener("click",toggleSnap);
+  document.getElementById("contBtn").addEventListener("click",()=>{
+    const r=document.getElementById("contBtn").getBoundingClientRect();openContainerMenu(r.left,r.bottom+4);});
   // file menu: 저장/열기/PNG/설정/초기화 collapsed into one dropdown button
   function clearAll(){if(!nodes.length)return;
     askConfirm("모든 노드와 연결을 삭제할까요?",()=>{
@@ -1502,8 +1750,13 @@
       {label:"💾 저장",action:saveFile},
       {label:"📂 열기",action:openFile},
       {label:"🖼 PNG 내보내기",action:exportPNG},
+      {label:"🎞 애니메이션 GIF",action:()=>askFilename("flowcanvas-anim","gif",fn=>exportGIF(fn))},
+      {label:"🎥 애니메이션 WebM",action:()=>askText("WebM 반복 횟수 (1~30)","3",
+        v=>{const loops=Math.max(1,Math.min(30,parseInt(v,10)||3));
+          askFilename("flowcanvas-anim","webm",fn=>exportWebM(fn,loops));})},
       {sep:true},
       {label:"⚙ 단축키 설정",action:openSettings},
+      {label:"❓ 사용자 가이드",action:openGuide},
       {sep:true},
       {label:"전체 초기화",danger:true,action:clearAll}]);
   }
@@ -1525,7 +1778,6 @@
   document.getElementById("zoomIn").addEventListener("click",()=>zoomBy(0.8));
   document.getElementById("zoomOut").addEventListener("click",()=>zoomBy(1.25));
   document.getElementById("zoomLevel").addEventListener("click",resetZoom);
-  document.getElementById("guideBtn").addEventListener("click",openGuide);
   document.getElementById("guideClose").addEventListener("click",closeGuide);
   document.getElementById("guideModal").addEventListener("click",e=>{if(e.target.id==="guideModal")closeGuide();});
   document.getElementById("playBtn").addEventListener("click",togglePlay);
@@ -1578,6 +1830,10 @@
   // open the inline editor for whatever is currently selected (node / edge / group)
   function editSelected(){
     if(inlineEl.style.display==="block")return;         // already editing
+    if(selContainer!=null){                             // container → edit its label
+      const c=containers.find(x=>x.id===selContainer);if(!c)return;
+      const p=diagramToClient(c.x+40,c.y+11);renameContainer(c,p.x,p.y);return;
+    }
     if(selEdge!=null){                                  // edge → edit its label
       const e=edges.find(x=>x.id===selEdge);if(!e)return;
       const a=nodes.find(n=>n.id===e.from),b=nodes.find(n=>n.id===e.to);if(!a||!b)return;
@@ -1616,6 +1872,17 @@
     // Enter (no modifiers) = edit the selected object's name/label
     if(ev.key==="Enter"&&!ev.metaKey&&!ev.ctrlKey&&!ev.altKey){
       ev.preventDefault();editSelected();return;}
+    // arrow keys = nudge selected nodes (Shift = larger step; grid step when snap is on)
+    if(/^Arrow/.test(ev.key)&&selNodes.size&&!ev.metaKey&&!ev.ctrlKey){
+      const step=snapOn?GRID:(ev.shiftKey?10:1);
+      const dx=ev.key==="ArrowLeft"?-step:ev.key==="ArrowRight"?step:0;
+      const dy=ev.key==="ArrowUp"?-step:ev.key==="ArrowDown"?step:0;
+      if(dx||dy){ev.preventDefault();nudgeSelection(dx,dy);return;}}
+    // duplicate / copy / paste
+    if(ev.metaKey||ev.ctrlKey){const k=ev.key.toLowerCase();
+      if(k==="d"&&selNodes.size){ev.preventDefault();duplicateSelection();return;}
+      if(k==="c"&&selNodes.size){ev.preventDefault();copySelection();return;}
+      if(k==="v"&&nodeClipboard){ev.preventDefault();pasteClipboard();return;}}
     const action=actionForCombo(comboFromEvent(ev));
     if(action){ev.preventDefault();runAction(action);}});
   window.addEventListener("keyup",ev=>{

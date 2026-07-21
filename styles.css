@@ -17,12 +17,15 @@
   /* ---------- top toolbar (labeled groups) ---------- */
   header{display:flex;align-items:stretch;gap:0;padding:7px 10px;
     background:linear-gradient(180deg,#121019,#0a0810);
-    border-bottom:1px solid #201b2b;flex-wrap:wrap;
+    border-bottom:1px solid #201b2b;flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;
     box-shadow:0 2px 12px rgba(0,0,0,.4)}
+  header::-webkit-scrollbar{height:6px}
+  header::-webkit-scrollbar-thumb{background:#2c2638;border-radius:3px}
+  header .brand,header .tbar-grp{flex:0 0 auto}
   .brand{display:flex;align-items:center;padding:0 14px 0 4px;margin-right:2px}
   header h1{font-size:16px;margin:0;font-weight:700;letter-spacing:.3px;color:#f3f0fa}
   header h1 .tag{color:var(--accent);font-weight:800}
-  .tbar-grp{display:flex;flex-direction:column;gap:5px;padding:2px 12px;
+  .tbar-grp{display:flex;flex-direction:column;gap:5px;padding:2px 9px;
     border-left:1px solid #1e1a29;justify-content:center}
   .grp-cap{font-size:9.5px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;
     color:var(--cap);padding-left:2px;user-select:none}
@@ -90,6 +93,13 @@
   /* fill/stroke color are set per-group as attributes (see renderGroups) so they can be customized */
   .subgraph rect{stroke-width:1.4;stroke-dasharray:6 4}
   .subgraph text{font-size:13px;font-weight:600;cursor:grab}
+  /* container frames (VPC/Region/subnet…) */
+  .cont-body{pointer-events:none}
+  .cont-title-bg{cursor:grab}
+  .cont-title{font-size:12px;font-weight:700;pointer-events:none;user-select:none}
+  .cont-resize{cursor:nwse-resize;opacity:.85}
+  .cont-resize:hover{opacity:1}
+  .container.sel .cont-body{stroke-width:2.6;fill-opacity:.1}
   .edge path.line{fill:none;stroke:#9c8fce;stroke-width:2}
   .edge.sel path.line{stroke:var(--accent2)!important;stroke-width:3!important}
   .edge text{fill:var(--text);font-size:12px;font-weight:600;text-anchor:middle}

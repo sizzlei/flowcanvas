@@ -36,3 +36,6 @@ temp/
 # ---- Local env ----
 .env
 .env.local
+
+# ---- Project notes (local only) ----
+ROADMAP.md
