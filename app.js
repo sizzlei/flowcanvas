@@ -596,15 +596,41 @@
     }
     return changed;
   }
+  // perpendicular side anchor: pick the side (T/B/L/R) of node n that faces point fpt
+  // along the dominant axis, and return the midpoint of that side (so the line enters
+  // the node straight-on, not into a corner).
+  function sideAnchor(n,fpt){
+    const dx=fpt.x-n.x,dy=fpt.y-n.y,hw=n.w/2,hh=n.h/2;
+    if(Math.abs(dx)>=Math.abs(dy))return{x:n.x+(dx>=0?hw:-hw),y:n.y};
+    return{x:n.x,y:n.y+(dy>=0?hh:-hh)};
+  }
   function drawEdge(e){
     const a=nodes.find(n=>n.id===e.from),b=nodes.find(n=>n.id===e.to);if(!a||!b)return;
     const wps=e.waypoints||(e.waypoints=[]);
     let mx,my,d;
-    if(wps.length||e.ortho){
-      // manual pinpoints and/or right-angle routing take precedence over auto-bow/curve.
-      // anchors aim at the nearest neighbouring point along the route.
-      const t1=wps.length?wps[0]:{x:b.x,y:b.y},t2=wps.length?wps[wps.length-1]:{x:a.x,y:a.y};
-      const p1=anchorPoint(a,t1.x,t1.y),p2=anchorPoint(b,t2.x,t2.y);
+    if(e.ortho&&!wps.length){
+      // clean single-elbow L between two boxes: exit one node perpendicular on the
+      // dominant axis, turn once, and enter the other node perpendicular (centered),
+      // so the arrow lands on the middle of a side rather than clipping a corner.
+      const dx=b.x-a.x,dy=b.y-a.y,hwA=a.w/2,hhA=a.h/2,hwB=b.w/2,hhB=b.h/2;
+      let p1,p2,corner;
+      if(Math.abs(dx)>=Math.abs(dy)){                 // horizontal first
+        p1={x:a.x+(dx>=0?hwA:-hwA),y:a.y};
+        corner={x:b.x,y:a.y};
+        p2={x:b.x,y:b.y-(dy>=0?hhB:-hhB)};
+      }else{                                          // vertical first
+        p1={x:a.x,y:a.y+(dy>=0?hhA:-hhA)};
+        corner={x:a.x,y:b.y};
+        p2={x:b.x-(dx>=0?hwB:-hwB),y:b.y};
+      }
+      d=`M ${p1.x} ${p1.y} L ${corner.x} ${corner.y} L ${p2.x} ${p2.y}`;
+      mx=(p1.x+p2.x)/2;my=(p1.y+p2.y)/2;
+    }else if(wps.length||e.ortho){
+      // manual pinpoints (optionally right-angled). Endpoints enter/leave perpendicular
+      // toward the adjacent pinpoint so arrows land on a side midpoint, not a corner.
+      const t1=wps[0],t2=wps[wps.length-1];
+      const p1=e.ortho?sideAnchor(a,t1):anchorPoint(a,t1.x,t1.y);
+      const p2=e.ortho?sideAnchor(b,t2):anchorPoint(b,t2.x,t2.y);
       const pts=[p1,...wps,p2];
       if(e.ortho){d=orthoPath(pts,anchorAxis(a,p1));}
       else{d="M "+pts.map((p,i)=>(i?"L ":"")+p.x+" "+p.y).join(" ");}
