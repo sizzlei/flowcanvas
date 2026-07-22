@@ -1097,10 +1097,11 @@
     if(!nodes.length){toast("먼저 노드를 추가하세요");return;}
     askFilename("flowcanvas-diagram","png",fn=>doExportPNG(fn));
   }
-  function doExportPNG(fn){
+  // build a standalone, self-contained export SVG of the whole diagram → {svgStr,w,h}
+  function buildExportSVG(){
     const b=contentBounds();let{minX,minY,maxX,maxY}=b;
     const pad=40;minX-=pad;minY-=pad;maxX+=pad;maxY+=pad;
-    const w=Math.ceil(maxX-minX),h=Math.ceil(maxY-minY),scale=2;
+    const w=Math.ceil(maxX-minX),h=Math.ceil(maxY-minY);
     const clone=document.createElementNS(SVGNS,"svg");
     clone.setAttribute("xmlns",SVGNS);clone.setAttribute("width",w);clone.setAttribute("height",h);
     clone.setAttribute("viewBox",`${minX} ${minY} ${w} ${h}`);
@@ -1113,15 +1114,24 @@
     clone.appendChild(gEdges.cloneNode(true));
     clone.appendChild(gNodes.cloneNode(true));
     inlineStyles(clone);
-    const svgStr=new XMLSerializer().serializeToString(clone);
+    return {svgStr:new XMLSerializer().serializeToString(clone),w,h};
+  }
+  // rasterize an export SVG string to a PNG Blob (cb receives Blob or null)
+  function svgToPNGBlob(svgStr,w,h,scale,cb){
     const img=new Image();
     img.onload=function(){
       const canvas=document.createElement("canvas");canvas.width=w*scale;canvas.height=h*scale;
       const ctx=canvas.getContext("2d");ctx.setTransform(scale,0,0,scale,0,0);ctx.drawImage(img,0,0);
-      canvas.toBlob(function(b){download(b,fn);toast("PNG 저장 완료: "+fn);},"image/png");
+      canvas.toBlob(function(b){cb(b);},"image/png");
     };
-    img.onerror=function(){toast("내보내기 실패");};
+    img.onerror=function(){cb(null);};
     img.src="data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(svgStr)));
+  }
+  function doExportPNG(fn){
+    const {svgStr,w,h}=buildExportSVG();
+    svgToPNGBlob(svgStr,w,h,2,function(b){
+      if(!b){toast("내보내기 실패");return;}
+      download(b,fn);toast("PNG 저장 완료: "+fn);});
   }
   function inlineStyles(root){
     // node shape/decor already carry fill+stroke+dash as attributes → keep them, just fill gaps
@@ -1453,7 +1463,10 @@
     if(s===lastCommitted)return;
     if(lastCommitted!==null){undoStack.push(lastCommitted);if(undoStack.length>200)undoStack.shift();}
     lastCommitted=s;redoStack=[];autosave();updateUndoBtns();
+    if(_fcChangeHooks.length)_fcChangeHooks.forEach(fn=>{try{fn(s);}catch(_){}});
   }
+  // ---------- host integration hooks (used by embeddings e.g. Confluence/Forge; no-op standalone) ----------
+  const _fcChangeHooks=[];
   function restoreFrom(s){restoring=true;loadState(Y.load(s));restoring=false;
     lastCommitted=s;autosave();updateUndoBtns();}
   function undo(){if(!undoStack.length){toast("실행취소할 작업이 없습니다");return;}
@@ -2049,4 +2062,17 @@
     sync();
     homeView();   // default zoom fixed at 100%
   })();
+
+  // Optional host API for embeddings (Confluence/Forge, iframe hosts, etc.).
+  // Standalone (GitHub Pages) never touches this, so behaviour is unchanged.
+  window.FlowCanvasHost={
+    getYAML(){return snapshot();},                 // serialized diagram (YAML string)
+    getState(){return serialize();},               // plain object
+    load(data){try{const s=(typeof data==="string")?data:Y.dump(data);restoreFrom(s);return true;}catch(e){return false;}},
+    isEmpty(){return !nodes.length;},
+    onChange(fn){if(typeof fn==="function")_fcChangeHooks.push(fn);},
+    exportSVG(){try{return nodes.length?buildExportSVG().svgStr:null;}catch(e){return null;}},   // string | null
+    exportPNGBlob(cb,scale){try{if(!nodes.length){cb&&cb(null);return;}const {svgStr,w,h}=buildExportSVG();svgToPNGBlob(svgStr,w,h,scale||2,cb);}catch(e){cb&&cb(null);}},
+    version:3
+  };
 })();

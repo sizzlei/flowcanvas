@@ -1,0 +1,32 @@
+modules:
+  macro:
+    - key: flowcanvas
+      # Published page shows the rendered PNG (static/view). Editing opens the
+      # full FlowCanvas editor as the macro config dialog (static/editor).
+      resource: view
+      config:
+        resource: editor
+      title: FlowCanvas
+      description: Mermaid 스타일 GUI 다이어그램 편집기
+      # 편집기를 넓게 쓰기 위한 뷰포트. deploy 시 값 오류가 나면 large 로 조정하세요.
+      viewportSize: max
+
+resources:
+  - key: view
+    path: static/view
+  - key: editor
+    path: static/editor
+
+permissions:
+  scopes:
+    - read:confluence-content.all
+    - write:confluence-file
+  content:
+    styles:
+      - unsafe-inline
+
+app:
+  # 'forge register' 를 실행하면 이 값이 실제 앱 ID 로 자동 교체됩니다.
+  id: ari:cloud:ecosystem::app/REPLACE_WITH_forge_register
+  runtime:
+    name: nodejs20.x
