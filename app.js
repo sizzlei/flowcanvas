@@ -572,6 +572,19 @@
       if(Math.abs(y-p.y)<by){by=Math.abs(y-p.y);ny=p.y;}}
     return{x:nx,y:ny};
   }
+  // merge overlapping pinpoints: drop a pinpoint onto a neighbour (or into an end node)
+  // and the redundant point is removed. Returns true if anything changed.
+  function dedupeWaypoints(e){
+    const a=nodes.find(n=>n.id===e.from),b=nodes.find(n=>n.id===e.to);
+    const wps=e.waypoints||[];let changed=false;
+    const inNode=(p,n)=>n&&Math.abs(p.x-n.x)<=n.w/2&&Math.abs(p.y-n.y)<=n.h/2;
+    const near=(p,q)=>Math.hypot(p.x-q.x,p.y-q.y)<12;
+    for(let i=wps.length-1;i>=0;i--){
+      if(inNode(wps[i],a)||inNode(wps[i],b)){wps.splice(i,1);changed=true;continue;}
+      if(i>0&&near(wps[i],wps[i-1])){wps.splice(i,1);changed=true;}
+    }
+    return changed;
+  }
   function drawEdge(e){
     const a=nodes.find(n=>n.id===e.from),b=nodes.find(n=>n.id===e.to);if(!a||!b)return;
     const wps=e.waypoints||(e.waypoints=[]);
@@ -667,7 +680,7 @@
         ({x,y}=orthoSnap(e,idx,x,y));
         e.waypoints[idx]={x,y};moved=true;drawEdge(e);};
       const onUp=()=>{window.removeEventListener("mousemove",onMove);window.removeEventListener("mouseup",onUp);
-        if(created&&moved){e._justDragged=true;sync();}};
+        if(created&&moved){if(dedupeWaypoints(e))drawEdge(e);e._justDragged=true;sync();}};
       window.addEventListener("mousemove",onMove);window.addEventListener("mouseup",onUp);
     });
     drawEdge(e);
@@ -690,7 +703,8 @@
         let x=p.x,y=p.y;if(snapOn){x=snapVal(x);y=snapVal(y);}
         ({x,y}=orthoSnap(e,i,x,y));
         e.waypoints[i]={x,y};moved=true;drawEdge(e);};
-      const onUp=()=>{window.removeEventListener("mousemove",onMove);window.removeEventListener("mouseup",onUp);if(moved)sync();};
+      const onUp=()=>{window.removeEventListener("mousemove",onMove);window.removeEventListener("mouseup",onUp);
+        if(moved){if(dedupeWaypoints(e))drawEdge(e);sync();}};
       window.addEventListener("mousemove",onMove);window.addEventListener("mouseup",onUp);
     });
     c.addEventListener("dblclick",ev=>{ev.stopPropagation();const i=e.wpEls.indexOf(c);
